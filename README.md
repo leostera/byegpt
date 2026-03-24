@@ -1,135 +1,115 @@
 # ByeGPT
 
-`ByeGPT` is a Chrome extension for exporting your own visible ChatGPT chats from a logged-in browser session into local JSON files.
+`ByeGPT` exports the ChatGPT conversations you can already see in your own browser session into local JSON files.
 
-The repository name stays `byegpt`. The shipped product is the `ByeGPT` Chrome extension plus the small build and publishing scripts around it.
+It is built for the simple case:
 
-## Chrome Extension
+- you are signed in to ChatGPT
+- you want a local copy of your chats
+- you want structured data you can actually work with
 
-The extension is aimed at the single-user case where the built-in ChatGPT export is unavailable or insufficient.
+## What You Get
 
-What it does:
+- one JSON file per conversation
+- downloaded assets grouped under that conversation
+- an optional combined JSON export
+- a visible in-page progress tracker while the crawl runs
 
-- Runs only on `chatgpt.com` and `chat.openai.com`.
-- Captures JSON responses already loaded in your own browser session.
-- Scrapes the visible conversation list from the sidebar.
-- Walks each discovered chat URL and stores a local JSON bundle.
-- Downloads each conversation as its own `.json` file during the crawl by default.
-- Downloads OpenAI-hosted assets referenced by those API responses into `byegpt/conversations/assets/<conversation-id>/`.
-- Lets you also export one final combined `.json` file.
+Everything is local-first. ByeGPT does not use an API key and does not ship your exported chat data to a backend operated by this project.
 
-What it does not do:
+## Download
 
-- It does not use an API key.
-- It does not access admin-only or workspace-wide data.
-- It only captures chats your current signed-in user can already load.
+Use whichever path is available:
 
-### Load the extension
+1. Chrome Web Store
+   Install ByeGPT there once the extension is published.
+2. GitHub Releases
+   Download the latest `byegpt-extension-v*.zip`, unzip it, then load the unpacked extension in Chrome.
+3. Local build
+   Build it from source and load `dist/unpacked`.
+
+## Load It In Chrome
 
 1. Open `chrome://extensions`.
 2. Enable `Developer mode`.
 3. Click `Load unpacked`.
-4. Select [`extension`](/Users/leostera/Developer/github.com/leostera/byegpt/extension).
+4. Select the unpacked extension folder.
 
-### Use it
+If you downloaded a release ZIP, select the unzipped folder.
+
+If you built from source, select [`dist/unpacked`](/Users/leostera/Developer/github.com/leostera/byegpt/dist/unpacked).
+
+## Use It
 
 1. Sign in to ChatGPT in Chrome.
-2. Open the extension popup while on `chatgpt.com`.
-3. Click `Start Download`.
-4. Leave the tab alone while it walks your chats.
-5. It will download per-conversation JSON files as it goes.
-6. Click `Export JSON` when finished if you also want one combined bundle.
+2. Open `https://chatgpt.com/`.
+3. Click the ByeGPT extension.
+4. Click `Start Download`.
+5. Close the popup and let the tab run.
+6. Watch the in-page tracker in the bottom-right corner.
 
-The extension stores data locally in extension storage until you clear it.
-Each per-conversation file now contains only captured API responses plus asset references.
-DOM snapshots and crawl metadata are not included in those conversation exports.
+ByeGPT will:
 
-### Package the extension
+- inventory your conversation list
+- skip conversations that were already downloaded
+- open each remaining chat
+- save each conversation as it goes
 
-Generate the store assets and package ZIP:
+## Where The Files Go
 
-```bash
-npm run generate:assets
-npm run build:extension
+The extension writes files under your Downloads folder like this:
+
+```text
+byegpt/
+  conversations/
+    <conversation-id>.json
+    assets/
+      <conversation-id>/
+        <asset files>
 ```
 
-This writes:
+You can also use `Export JSON` in the popup if you want one combined bundle.
 
-- `dist/byegpt-extension-v<version>.zip`
-- `dist/byegpt-extension-v<version>.zip.sha256`
-- `store-assets/` listing images
+## What The JSON Looks Like
 
-### Chrome Web Store prep
+Each conversation file contains API-derived data only:
 
-The repo now includes:
-
-- static pages in `site/` for a homepage and privacy policy
-- store listing guidance in [`docs/chrome-web-store.md`](/Users/leostera/Developer/github.com/leostera/byegpt/docs/chrome-web-store.md)
-- GitHub Actions for validation, packaging, and optional Pages deployment
-- a GitHub Actions workflow for Chrome Web Store upload/publish
-
-Before submitting, you should still do one real browser pass and confirm the screenshots match the latest UI.
-
-### Chrome Web Store publish workflow
-
-The repository includes [`publish-chrome-web-store.yml`](/Users/leostera/Developer/github.com/leostera/byegpt/.github/workflows/publish-chrome-web-store.yml), which can upload a packaged extension to the Chrome Web Store and optionally submit it for review.
-
-Set these repository values first:
-
-- repository variable `CWS_EXTENSION_ID`
-- repository secret `CWS_CLIENT_ID`
-- repository secret `CWS_CLIENT_SECRET`
-- repository secret `CWS_REFRESH_TOKEN`
-
-The workflow uses the [`chrome-webstore-upload-cli`](https://www.npmjs.com/package/chrome-webstore-upload-cli) package, which expects the standard Chrome Web Store OAuth client credentials and refresh token flow.
-
-You can trigger the workflow manually from GitHub Actions, or push a `v*` tag to upload and publish automatically.
-
-### Developer hooks and checks
-
-Install the JavaScript dev tooling and enable the local pre-commit hook:
-
-```bash
-npm install
-git config --local core.hooksPath .githooks
+```json
+{
+  "conversation_id": "...",
+  "title": "...",
+  "api_responses": [],
+  "assets": []
+}
 ```
 
-The pre-commit hook runs:
+Each asset entry includes the original URL plus a `relative_path` pointing to the downloaded local file when one exists.
 
-- Biome format checks
-- ESLint
-- TypeScript `checkJs` typechecks over the extension JavaScript
-- Python syntax checks for the helper scripts
-- JavaScript smoke tests
+## How To Use The Data
 
-Useful commands:
+Common ways to use the export:
 
-```bash
-npm run check:all
-npm run format
-npm run dev
-npm run build:extension
-```
+- archive your ChatGPT history locally
+- load conversations into notebooks or analysis scripts
+- index them in your own search system
+- convert them into another schema for internal tools
 
-### AGENTS routing
+The JSON files are designed to be easy to process with `jq`, Python, JavaScript, DuckDB, or your own pipeline.
 
-This repo uses modular `AGENTS.md` files:
+## Limits
 
-- [`AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/AGENTS.md) routes to the right sub-guide
-- [`extension/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/extension/AGENTS.md) covers extension work
-- [`scripts/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/scripts/AGENTS.md) covers packaging and asset generation
-- [`tests-js/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/tests-js/AGENTS.md) covers the smoke tests
+- ByeGPT only exports chats your current signed-in user can already access.
+- It does not provide an admin or workspace-wide export.
+- It does not use undocumented server-side privileges.
+- It depends on the current ChatGPT web app behavior, so site changes can break parts of the crawler.
 
-## Development
+## Privacy
 
-Run the full local gate:
+ByeGPT stores crawl state locally in extension storage while it is working and writes exported files to your local machine.
 
-```bash
-npm run check:all
-```
+- Privacy policy: [`site/privacy-policy.html`](/Users/leostera/Developer/github.com/leostera/byegpt/site/privacy-policy.html)
+- Store submission notes: [`docs/chrome-web-store.md`](/Users/leostera/Developer/github.com/leostera/byegpt/docs/chrome-web-store.md)
 
-Build a distributable package:
+## Contributing
 
-```bash
-npm run build:extension
-```
+Contributor setup, local development, and release workflow notes live in [`CONTRIBUTING.md`](/Users/leostera/Developer/github.com/leostera/byegpt/CONTRIBUTING.md).

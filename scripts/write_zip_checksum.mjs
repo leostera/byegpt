@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const distDir = path.resolve("dist");
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(scriptDir, "..");
+const distDir = path.join(rootDir, "dist");
 const entries = await fs.readdir(distDir);
 const zipName = entries.find((entry) =>
   /^byegpt-extension-v.+\.zip$/.test(entry),
