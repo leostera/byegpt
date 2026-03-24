@@ -194,6 +194,7 @@
     var seenUrls = currentUrl ? [currentUrl] : [];
 
     var job = {
+      runId: createRunId(),
       active: true,
       phase: "inventory",
       startedAt: new Date().toISOString(),
@@ -211,7 +212,7 @@
     };
 
     await setInStorage(JOB_KEY, job);
-    await runCrawlTick();
+    await runCrawlTick(job.runId);
 
     return {
       discoveredCount: seenUrls.length,
@@ -225,7 +226,7 @@
       return;
     }
 
-    runCrawlTick().catch(function (error) {
+    runCrawlTick(job.runId).catch(function (error) {
       console.error("byegpt crawl resume failed", error);
     });
   }
@@ -247,17 +248,23 @@
     return { restarted: true };
   }
 
-  async function runCrawlTick() {
-    var stored = await getFromStorage([JOB_KEY]);
-    var job = stored[JOB_KEY];
+  async function runCrawlTick(runId) {
+    var job = await loadActiveJob(runId);
     if (!job || !job.active) {
       return;
     }
 
     if (job.phase === "inventory") {
-      var inventoryResult = await inventoryAllConversations(job);
-      if (inventoryResult && inventoryResult.paused) {
-        scheduleResumeRetry();
+      var inventoryResult = await inventoryAllConversations(job, runId);
+      if (inventoryResult && inventoryResult.cancelled) {
+        return;
+      }
+      if (!(await isRunCurrent(runId))) {
+        return;
+      }
+
+      job = (await loadMatchingJob(runId)) || job;
+      if (!job.active) {
         return;
       }
 
@@ -265,6 +272,9 @@
         (job.seenUrls || []).concat(job.currentUrl ? [job.currentUrl] : []),
       );
       var savedConversationIds = await fetchSavedConversationIds();
+      if (!(await isRunCurrent(runId))) {
+        return;
+      }
       var savedLookup = {};
       savedConversationIds.forEach(function (conversationId) {
         savedLookup[conversationId] = true;
@@ -292,9 +302,16 @@
       job.pendingUrls = dedupe(job.pendingUrls);
       job.skippedCount = job.skippedUrls.length;
       job.updatedAt = new Date().toISOString();
-      await setInStorage(JOB_KEY, job);
+      if (!(await persistJobIfCurrent(job))) {
+        return;
+      }
     }
 
+    if (!(await isRunCurrent(runId))) {
+      return;
+    }
+
+    job = (await loadActiveJob(runId)) || job;
     var currentUrl = normalizeConversationUrl(window.location.href);
     var nextUrl = (job.pendingUrls || [])[0] || null;
 
@@ -302,27 +319,40 @@
       job.active = false;
       job.completedAt = new Date().toISOString();
       job.updatedAt = job.completedAt;
-      job.updatedAt = new Date().toISOString();
-      await setInStorage(JOB_KEY, job);
+      if (!(await persistJobIfCurrent(job))) {
+        return;
+      }
       return;
     }
 
     if (currentUrl !== nextUrl) {
       job.currentUrl = nextUrl;
       job.updatedAt = new Date().toISOString();
-      await setInStorage(JOB_KEY, job);
+      if (!(await persistJobIfCurrent(job))) {
+        return;
+      }
       await navigateToConversation(nextUrl);
-      scheduleResumeRetry();
+      scheduleResumeRetry(runId);
       return;
     }
 
     await waitForPageSettled();
+    if (!(await isRunCurrent(runId))) {
+      return;
+    }
     var currentId = extractConversationId(currentUrl);
     if (currentId) {
       await waitForConversationData(currentId, 5000);
+      if (!(await isRunCurrent(runId))) {
+        return;
+      }
       await maybeDownloadConversation(currentId, "crawl");
+      if (!(await isRunCurrent(runId))) {
+        return;
+      }
     }
 
+    job = (await loadActiveJob(runId)) || job;
     if (currentUrl) {
       job.pendingUrls = (job.pendingUrls || []).filter(function (url) {
         return url !== currentUrl;
@@ -333,28 +363,49 @@
     }
 
     job.updatedAt = new Date().toISOString();
-    await setInStorage(JOB_KEY, job);
+    if (!(await persistJobIfCurrent(job))) {
+      return;
+    }
 
-    await runCrawlTick();
+    await runCrawlTick(runId);
   }
 
   // Inventory the full sidebar first so the crawl order is deterministic and we can
   // skip conversations that already exist on disk before opening them again.
-  async function inventoryAllConversations(job) {
+  async function inventoryAllConversations(job, runId) {
+    if (!(await isRunCurrent(runId))) {
+      return { cancelled: true };
+    }
     await scrollSidebarToTop();
-    await waitForSidebarLazyLoad(job, 1200);
+    if (!(await isRunCurrent(runId))) {
+      return { cancelled: true };
+    }
+    await waitForSidebarLazyLoad(job, 1200, runId);
+    if (!(await isRunCurrent(runId))) {
+      return { cancelled: true };
+    }
 
     var stableBottomRounds = 0;
 
     for (var round = 0; round < 200; round += 1) {
+      if (!(await isRunCurrent(runId))) {
+        return { cancelled: true };
+      }
       var beforeSeenCount = (job.seenUrls || []).length;
-      await ingestSidebarEntries(job);
+      await ingestSidebarEntries(job, runId);
+      if (!(await isRunCurrent(runId))) {
+        return { cancelled: true };
+      }
 
       var scrollState = await scrollSidebarForMoreChats();
       var lazyLoadResult = await waitForSidebarLazyLoad(
         job,
         scrollState.moved ? 1600 : 2200,
+        runId,
       );
+      if (!(await isRunCurrent(runId))) {
+        return { cancelled: true };
+      }
       var afterSeenCount = (job.seenUrls || []).length;
       var grew = afterSeenCount > beforeSeenCount || lazyLoadResult.grew;
 
@@ -373,14 +424,20 @@
 
     await scrollSidebarToTop();
     return {
-      paused: false,
+      cancelled: false,
       inventoryCount: (job.seenUrls || []).length,
     };
   }
 
-  async function ingestSidebarEntries(job) {
+  async function ingestSidebarEntries(job, runId) {
+    if (!(await isRunCurrent(runId))) {
+      return 0;
+    }
     var entries = await collectSidebarEntries();
     await rememberDiscoveredChats(entries);
+    if (!(await isRunCurrent(runId))) {
+      return 0;
+    }
 
     job.seenUrls = dedupe(
       (job.seenUrls || []).concat(
@@ -391,20 +448,36 @@
     );
     job.inventoryCount = (job.seenUrls || []).length;
     job.updatedAt = new Date().toISOString();
-    await setInStorage(JOB_KEY, job);
+    if (!(await persistJobIfCurrent(job))) {
+      return 0;
+    }
 
     return entries.length;
   }
 
-  async function waitForSidebarLazyLoad(job, timeoutMs) {
+  async function waitForSidebarLazyLoad(job, timeoutMs, runId) {
     var deadline = Date.now() + timeoutMs;
     var grew = false;
     var stablePolls = 0;
     var previousCount = (job.seenUrls || []).length;
 
     while (Date.now() < deadline) {
+      if (!(await isRunCurrent(runId))) {
+        return {
+          cancelled: true,
+          grew: grew,
+          count: (job.seenUrls || []).length,
+        };
+      }
       await sleep(350);
-      await ingestSidebarEntries(job);
+      await ingestSidebarEntries(job, runId);
+      if (!(await isRunCurrent(runId))) {
+        return {
+          cancelled: true,
+          grew: grew,
+          count: (job.seenUrls || []).length,
+        };
+      }
 
       var currentCount = (job.seenUrls || []).length;
       if (currentCount > previousCount) {
@@ -421,6 +494,7 @@
     }
 
     return {
+      cancelled: false,
       grew: grew,
       count: (job.seenUrls || []).length,
     };
@@ -1492,14 +1566,14 @@
     } catch (error) {}
   }
 
-  function scheduleResumeRetry() {
+  function scheduleResumeRetry(runId) {
     if (resumeRetryTimer) {
       return;
     }
 
     resumeRetryTimer = setTimeout(function () {
       resumeRetryTimer = null;
-      resumeCrawlIfNeeded().catch(function (error) {
+      runCrawlTick(runId).catch(function (error) {
         if (isExtensionContextInvalidatedError(error)) {
           teardownInvalidatedContext();
           return;
@@ -1507,6 +1581,50 @@
         console.warn("byegpt resume retry failed", error);
       });
     }, 1000);
+  }
+
+  async function loadMatchingJob(runId) {
+    var stored = await getFromStorage([JOB_KEY]);
+    var job = stored[JOB_KEY];
+    if (!job || job.runId !== runId) {
+      return null;
+    }
+    return job;
+  }
+
+  async function loadActiveJob(runId) {
+    var job = await loadMatchingJob(runId);
+    if (!job || !job.active) {
+      return null;
+    }
+    return job;
+  }
+
+  async function isRunCurrent(runId) {
+    return Boolean(await loadActiveJob(runId));
+  }
+
+  async function persistJobIfCurrent(job) {
+    if (!job || !job.runId) {
+      return false;
+    }
+
+    var current = await loadMatchingJob(job.runId);
+    if (!current) {
+      return false;
+    }
+
+    await setInStorage(JOB_KEY, job);
+    return true;
+  }
+
+  function createRunId() {
+    return (
+      "run_" +
+      Date.now().toString(36) +
+      "_" +
+      Math.random().toString(36).slice(2, 10)
+    );
   }
 
   function startOverlayRefresh() {
