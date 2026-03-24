@@ -1,6 +1,6 @@
 # Chrome Web Store Submission Notes
 
-This repository is set up to package the `ByeGPT` extension and produce the basic listing assets needed for a Chrome Web Store submission.
+This repository is set up to package the `ByeGPT` extension for Chrome Web Store submission.
 
 ## Proposed listing
 
@@ -79,9 +79,9 @@ The extension processes conversation content locally in the browser and writes i
 ## Included assets
 
 - Store icon: `extension/icons/icon-128.png`
-- Screenshot: `store-assets/screenshot-01.png`
-- Small promo image: `store-assets/promo-small-440x280.png`
-- Optional marquee promo image: `store-assets/promo-marquee-1400x560.png`
+- Screenshot: provide your own current screenshot before submission
+- Small promo image: provide your own current promo image before submission
+- Optional marquee promo image: provide your own current marquee image before submission
 
 ## GitHub Actions publishing
 

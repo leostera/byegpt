@@ -4,7 +4,6 @@
   "version": "0.1.0",
   "description": "Development tooling for the ByeGPT repository.",
   "scripts": {
-    "generate:assets": "python3 scripts/generate_store_assets.py",
     "dev": "vite --config vite.config.mjs",
     "build:extension": "vite build --config vite.config.mjs && cd dist/unpacked && bestzip ../byegpt-extension-v$npm_package_version.zip * && node ../../scripts/write_zip_checksum.mjs",
     "publish:chrome": "chrome-webstore-upload",
@@ -13,10 +12,9 @@
     "format:check": "biome check . --linter-enabled=false --organize-imports-enabled=false --assists-enabled=false",
     "lint": "eslint .",
     "typecheck": "tsc --project tsconfig.json",
-    "check:scripts": "python3 -m py_compile scripts/generate_store_assets.py",
     "test:js": "node --test tests-js/*.test.mjs",
     "test": "npm run test:js",
-    "check:all": "npm run format:check && npm run lint && npm run typecheck && npm run check:scripts && npm run test"
+    "check:all": "npm run format:check && npm run lint && npm run typecheck && npm run test"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

@@ -7,7 +7,6 @@ This repository ships the `ByeGPT` Chrome extension and the tooling around build
 - Node.js 22 or newer
 - npm
 - Google Chrome
-- Python 3, only for the store-asset generation helper
 
 ## Local Setup
 
@@ -21,12 +20,6 @@ npm install
 
 ```bash
 git config --local core.hooksPath .githooks
-```
-
-3. Generate store and icon assets once:
-
-```bash
-npm run generate:assets
 ```
 
 ## Daily Development Flow

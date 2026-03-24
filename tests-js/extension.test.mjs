@@ -21,16 +21,11 @@ test("publish docs exist", () => {
   assert.ok(fs.existsSync(path.join(root, "docs", "chrome-web-store.md")));
   assert.ok(fs.existsSync(path.join(root, "site", "privacy-policy.html")));
   assert.ok(fs.existsSync(path.join(root, "site", "index.html")));
+  assert.ok(fs.existsSync(path.join(root, "CONTRIBUTING.md")));
 });
 
-test("asset generator outputs required store images", () => {
+test("extension icon assets exist", () => {
   assert.ok(
     fs.existsSync(path.join(root, "extension", "icons", "icon-128.png")),
-  );
-  assert.ok(
-    fs.existsSync(path.join(root, "store-assets", "screenshot-01.png")),
-  );
-  assert.ok(
-    fs.existsSync(path.join(root, "store-assets", "promo-small-440x280.png")),
   );
 });

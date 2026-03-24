@@ -15,11 +15,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -27,9 +22,6 @@ jobs:
 
       - name: Install JavaScript dev dependencies
         run: npm install
-
-      - name: Generate store assets
-        run: npm run generate:assets
 
       - name: Run repository checks
         run: npm run check:all
@@ -45,10 +37,9 @@ jobs:
             dist/byegpt-extension-v*.zip
             dist/byegpt-extension-v*.zip.sha256
 
-      - name: Upload store assets
+      - name: Upload static site
         uses: actions/upload-artifact@v4
         with:
-          name: byegpt-store-assets
+          name: byegpt-site
           path: |
-            store-assets/*.png
             site/**
