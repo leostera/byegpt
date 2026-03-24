@@ -1,0 +1,47 @@
+name: Release Extension
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install JavaScript dev dependencies
+        run: npm install
+
+      - name: Generate store assets
+        run: npm run generate:assets
+
+      - name: Run repository checks
+        run: npm run check:all
+
+      - name: Package extension ZIP
+        run: npm run build:extension
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/byegpt-extension-v*.zip
+            dist/byegpt-extension-v*.zip.sha256

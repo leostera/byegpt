@@ -1,3 +1,4 @@
+// The popup is a thin control surface for the active ChatGPT tab.
 var CAPTURE_KEY = "byegpt.capture";
 var JOB_KEY = "byegpt.job";
 var POPUP_HEARTBEAT_KEY = "byegpt.popupHeartbeat";
@@ -8,14 +9,16 @@ document.addEventListener("DOMContentLoaded", function () {
   startPopupHeartbeat();
   startPopupRefresh();
 
-  document.getElementById("captureCurrent").addEventListener("click", function () {
-    runTabAction("byegpt:capture-current", "Captured current chat.");
-  });
+  document
+    .getElementById("captureCurrent")
+    .addEventListener("click", function () {
+      runTabAction("byegpt:capture-current", "Captured current chat.");
+    });
 
   document.getElementById("startCrawl").addEventListener("click", function () {
     runTabAction(
       "byegpt:start-crawl",
-      "Started download. Close the popup and watch the in-page tracker."
+      "Started download. Close the popup and watch the in-page tracker.",
     );
   });
 
@@ -23,12 +26,14 @@ document.addEventListener("DOMContentLoaded", function () {
     runTabAction("byegpt:stop-crawl", "Stopped download.");
   });
 
-  document.getElementById("restartCrawl").addEventListener("click", function () {
-    runTabAction(
-      "byegpt:restart-crawl",
-      "Restarted crawl state. Existing files on disk were not deleted."
-    );
-  });
+  document
+    .getElementById("restartCrawl")
+    .addEventListener("click", function () {
+      runTabAction(
+        "byegpt:restart-crawl",
+        "Restarted crawl state. Existing files on disk were not deleted.",
+      );
+    });
 
   document.getElementById("exportJson").addEventListener("click", exportJson);
 
@@ -40,19 +45,22 @@ document.addEventListener("DOMContentLoaded", function () {
 async function refresh() {
   var status = await getStatusFromStorage();
   document.getElementById("conversationCount").textContent = String(
-    status.conversationCount || 0
+    status.conversationCount || 0,
   );
   document.getElementById("networkEventCount").textContent = String(
-    status.networkEventCount || 0
+    status.networkEventCount || 0,
   );
   document.getElementById("discoveredChatCount").textContent = String(
-    status.discoveredChatCount || 0
+    status.discoveredChatCount || 0,
   );
   document.getElementById("downloadedConversationCount").textContent = String(
-    status.downloadedConversationCount || 0
+    status.downloadedConversationCount || 0,
   );
-  document.getElementById("jobStatus").textContent = formatJobStatus(status.job);
-  document.getElementById("activityStatus").textContent = formatActivityStatus(status);
+  document.getElementById("jobStatus").textContent = formatJobStatus(
+    status.job,
+  );
+  document.getElementById("activityStatus").textContent =
+    formatActivityStatus(status);
 }
 
 async function runTabAction(messageType, successMessage) {
@@ -71,15 +79,21 @@ async function runTabAction(messageType, successMessage) {
 
 async function getStatusFromStorage() {
   var stored = await chrome.storage.local.get([CAPTURE_KEY, JOB_KEY]);
-  var capture = stored[CAPTURE_KEY] || { conversations: {}, networkEvents: [], discoveredChats: [] };
+  var capture = stored[CAPTURE_KEY] || {
+    conversations: {},
+    networkEvents: [],
+    discoveredChats: [],
+  };
   var latestDownload = findLatestDownload(capture.conversations || {});
   return {
     conversationCount: Object.keys(capture.conversations || {}).length,
     networkEventCount: (capture.networkEvents || []).length,
     discoveredChatCount: (capture.discoveredChats || []).length,
-    downloadedConversationCount: countDownloadedConversations(capture.conversations || {}),
+    downloadedConversationCount: countDownloadedConversations(
+      capture.conversations || {},
+    ),
     latestDownload: latestDownload,
-    job: stored[JOB_KEY] || null
+    job: stored[JOB_KEY] || null,
   };
 }
 
@@ -88,17 +102,21 @@ async function exportJson() {
     var stored = await chrome.storage.local.get([CAPTURE_KEY]);
     var capture = stored[CAPTURE_KEY] || { conversations: {} };
     var payload = {
-      conversations: Object.keys(capture.conversations || {}).map(function (conversationId) {
-        return sanitizeConversationExport(capture.conversations[conversationId]);
-      })
+      conversations: Object.keys(capture.conversations || {}).map(
+        function (conversationId) {
+          return sanitizeConversationExport(
+            capture.conversations[conversationId],
+          );
+        },
+      ),
     };
     await chrome.runtime.sendMessage({
       type: "byegpt:download-json",
       payload: {
         filename: "byegpt/byegpt-export-" + timestampSlug() + ".json",
         data: payload,
-        saveAs: true
-      }
+        saveAs: true,
+      },
     });
     setMessage("Downloaded JSON export.");
   } catch (error) {
@@ -141,7 +159,11 @@ function formatJobStatus(job) {
 }
 
 function formatActivityStatus(status) {
-  if (status.job && status.job.active && status.job.pausedReason === "popup_open") {
+  if (
+    status.job &&
+    status.job.active &&
+    status.job.pausedReason === "popup_open"
+  ) {
     return "Paused while the popup is open. Close it to let downloads continue.";
   }
   if (status.job && status.job.active && status.job.phase === "inventory") {
@@ -167,7 +189,7 @@ function formatActivityStatus(status) {
 async function getActiveTab() {
   var tabs = await chrome.tabs.query({
     active: true,
-    currentWindow: true
+    currentWindow: true,
   });
   if (!tabs.length) {
     throw new Error("No active tab.");
@@ -199,8 +221,7 @@ function startPopupRefresh() {
 function updatePopupHeartbeat() {
   var payload = {};
   payload[POPUP_HEARTBEAT_KEY] = Date.now();
-  chrome.storage.local.set(payload).catch(function () {
-  });
+  chrome.storage.local.set(payload).catch(function () {});
 }
 
 window.addEventListener("unload", function () {
@@ -216,8 +237,7 @@ window.addEventListener("unload", function () {
   payload[POPUP_HEARTBEAT_KEY] = 0;
   try {
     chrome.storage.local.set(payload);
-  } catch (error) {
-  }
+  } catch (error) {}
 });
 
 function formatExtensionError(error) {
@@ -242,9 +262,9 @@ function sanitizeConversationExport(conversation) {
         original_url: asset.url,
         relative_path: asset.relativePath || null,
         source_event_ids: asset.sourceEventIds || [],
-        source_json_paths: asset.sourceJsonPaths || []
+        source_json_paths: asset.sourceJsonPaths || [],
       };
-    })
+    }),
   };
 }
 
@@ -252,8 +272,8 @@ function countDownloadedConversations(conversations) {
   return Object.keys(conversations).filter(function (id) {
     return Boolean(
       conversations[id] &&
-      conversations[id].exportMetadata &&
-      conversations[id].exportMetadata.downloadedAt
+        conversations[id].exportMetadata &&
+        conversations[id].exportMetadata.downloadedAt,
     );
   }).length;
 }
@@ -279,7 +299,7 @@ function findLatestDownload(conversations) {
         id: id,
         label: conversation.title || id,
         downloadedAt: conversation.exportMetadata.downloadedAt,
-        filename: conversation.exportMetadata.lastDownloadedFilename || null
+        filename: conversation.exportMetadata.lastDownloadedFilename || null,
       };
     }
   });

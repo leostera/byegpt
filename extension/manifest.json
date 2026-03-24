@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "byegpt",
+  "name": "ByeGPT",
+  "short_name": "ByeGPT",
   "version": "0.1.0",
   "description": "Export your own visible ChatGPT chats from a logged-in browser session.",
+  "homepage_url": "https://github.com/leostera/byegpt",
   "permissions": [
     "activeTab",
     "downloads",
@@ -17,8 +19,18 @@
     "https://*.oaiusercontent.com/*",
     "https://cdn.openai.com/*"
   ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "action": {
-    "default_title": "byegpt",
+    "default_title": "ByeGPT",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    },
     "default_popup": "popup.html"
   },
   "background": {
@@ -26,25 +38,15 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://chatgpt.com/*",
-        "https://chat.openai.com/*"
-      ],
-      "js": [
-        "content.js"
-      ],
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "js": ["content.js"],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": [
-        "injected.js"
-      ],
-      "matches": [
-        "https://chatgpt.com/*",
-        "https://chat.openai.com/*"
-      ]
+      "resources": ["injected.js"],
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"]
     }
   ]
 }

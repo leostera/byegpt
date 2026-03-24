@@ -1,0 +1,54 @@
+name: Extension CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install JavaScript dev dependencies
+        run: npm install
+
+      - name: Generate store assets
+        run: npm run generate:assets
+
+      - name: Run repository checks
+        run: npm run check:all
+
+      - name: Package extension ZIP
+        run: npm run build:extension
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: byegpt-extension-package
+          path: |
+            dist/byegpt-extension-v*.zip
+            dist/byegpt-extension-v*.zip.sha256
+
+      - name: Upload store assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: byegpt-store-assets
+          path: |
+            store-assets/*.png
+            site/**

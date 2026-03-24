@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -eu
+
+if command -v npm >/dev/null 2>&1; then
+  npm run check:all
+  exit 0
+fi
+
+echo "npm is required to run the ByeGPT pre-commit checks." >&2
+exit 1

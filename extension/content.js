@@ -1,3 +1,10 @@
+// Content script orchestrator.
+// Responsibilities are grouped here as:
+// 1. runtime message wiring
+// 2. crawl lifecycle and sidebar inventory
+// 3. capture normalization and persistence
+// 4. per-conversation export and asset downloads
+// 5. in-page progress overlay
 (function () {
   var CAPTURE_KEY = "byegpt.capture";
   var JOB_KEY = "byegpt.job";
@@ -64,7 +71,11 @@
   }
 
   function resolvePendingAssetFetch(payload) {
-    if (!payload || !payload.requestId || !pendingAssetFetches[payload.requestId]) {
+    if (
+      !payload ||
+      !payload.requestId ||
+      !pendingAssetFetches[payload.requestId]
+    ) {
       return;
     }
 
@@ -139,7 +150,6 @@
         });
       return true;
     }
-
   }
 
   async function getStatus() {
@@ -154,11 +164,13 @@
       conversationCount: Object.keys(capture.conversations || {}).length,
       networkEventCount: (capture.networkEvents || []).length,
       discoveredChatCount: (capture.discoveredChats || []).length,
-      downloadedConversationCount: countDownloadedConversations(capture.conversations || {}),
+      downloadedConversationCount: countDownloadedConversations(
+        capture.conversations || {},
+      ),
       latestDownload: findLatestDownload(capture.conversations || {}),
       knownTotalCount: calculateKnownTotal(job, capture),
       autoDownloadConversations: Boolean(settings.autoDownloadConversations),
-      job: job
+      job: job,
     };
   }
 
@@ -181,14 +193,14 @@
       currentUrl: currentUrl,
       autoDownloadConversations: Boolean(settings.autoDownloadConversations),
       seenUrls: seenUrls,
-      savedConversationIds: []
+      savedConversationIds: [],
     };
 
     await setInStorage(JOB_KEY, job);
     await runCrawlTick();
 
     return {
-      discoveredCount: seenUrls.length
+      discoveredCount: seenUrls.length,
     };
   }
 
@@ -265,7 +277,9 @@
         return;
       }
 
-      var inventoryUrls = dedupe((job.seenUrls || []).concat(job.currentUrl ? [job.currentUrl] : []));
+      var inventoryUrls = dedupe(
+        (job.seenUrls || []).concat(job.currentUrl ? [job.currentUrl] : []),
+      );
       var savedConversationIds = await fetchSavedConversationIds();
       var savedLookup = {};
       savedConversationIds.forEach(function (conversationId) {
@@ -340,6 +354,8 @@
     await runCrawlTick();
   }
 
+  // Inventory the full sidebar first so the crawl order is deterministic and we can
+  // skip conversations that already exist on disk before opening them again.
   async function inventoryAllConversations(job) {
     await scrollSidebarToTop();
     await waitForSidebarLazyLoad(job, 1200);
@@ -358,7 +374,10 @@
       }
 
       var scrollState = await scrollSidebarForMoreChats();
-      var lazyLoadResult = await waitForSidebarLazyLoad(job, scrollState.moved ? 1600 : 2200);
+      var lazyLoadResult = await waitForSidebarLazyLoad(
+        job,
+        scrollState.moved ? 1600 : 2200,
+      );
       var afterSeenCount = (job.seenUrls || []).length;
       var grew = afterSeenCount > beforeSeenCount || lazyLoadResult.grew;
 
@@ -378,7 +397,7 @@
     await scrollSidebarToTop();
     return {
       paused: false,
-      inventoryCount: (job.seenUrls || []).length
+      inventoryCount: (job.seenUrls || []).length,
     };
   }
 
@@ -386,9 +405,13 @@
     var entries = await collectSidebarEntries();
     await rememberDiscoveredChats(entries);
 
-    job.seenUrls = dedupe((job.seenUrls || []).concat(entries.map(function (entry) {
-      return entry.url;
-    })));
+    job.seenUrls = dedupe(
+      (job.seenUrls || []).concat(
+        entries.map(function (entry) {
+          return entry.url;
+        }),
+      ),
+    );
     job.inventoryCount = (job.seenUrls || []).length;
     job.updatedAt = new Date().toISOString();
     await setInStorage(JOB_KEY, job);
@@ -422,7 +445,7 @@
 
     return {
       grew: grew,
-      count: (job.seenUrls || []).length
+      count: (job.seenUrls || []).length,
     };
   }
 
@@ -435,34 +458,6 @@
     await waitForConversationData(currentId, 5000);
     await maybeDownloadConversation(currentId, "manual");
     return { downloaded: true, conversationId: currentId };
-  }
-
-  async function expandSidebarAndCollectLinks() {
-    var previousCount = -1;
-    var stableRounds = 0;
-
-    for (var round = 0; round < 20; round += 1) {
-      var links = await collectConversationLinks();
-      if (links.length === previousCount) {
-        stableRounds += 1;
-      } else {
-        stableRounds = 0;
-      }
-
-      previousCount = links.length;
-      if (stableRounds >= 3) {
-        return links;
-      }
-
-      var containers = findScrollableChatContainers();
-      for (var i = 0; i < containers.length; i += 1) {
-        containers[i].scrollTop = containers[i].scrollHeight;
-      }
-      window.scrollTo(0, document.body.scrollHeight);
-      await sleep(400);
-    }
-
-    return collectConversationLinks();
   }
 
   function findScrollableChatContainers() {
@@ -478,21 +473,10 @@
     });
   }
 
-  async function collectConversationLinks() {
-    var nodes = document.querySelectorAll("a[href*='/c/']");
-    var links = [];
-    for (var i = 0; i < nodes.length; i += 1) {
-      var href = nodes[i].href;
-      var normalized = normalizeConversationUrl(href);
-      if (normalized) {
-        links.push(normalized);
-      }
-    }
-    return dedupe(links);
-  }
-
   async function collectSidebarEntries() {
-    var nodes = document.querySelectorAll("a[href*='/c/']");
+    var nodes = /** @type {NodeListOf<HTMLAnchorElement>} */ (
+      document.querySelectorAll("a[href*='/c/']")
+    );
     var entries = [];
     for (var i = 0; i < nodes.length; i += 1) {
       var url = normalizeConversationUrl(nodes[i].href);
@@ -504,7 +488,7 @@
         url: url,
         label: cleanText(nodes[i].textContent) || null,
         discoveredAt: new Date().toISOString(),
-        source: "sidebar"
+        source: "sidebar",
       });
     }
     return dedupeEntries(entries);
@@ -517,8 +501,8 @@
         new MouseEvent("click", {
           bubbles: true,
           cancelable: true,
-          view: window
-        })
+          view: window,
+        }),
       );
       return;
     }
@@ -532,7 +516,9 @@
       return null;
     }
 
-    var nodes = document.querySelectorAll("a[href*='/c/']");
+    var nodes = /** @type {NodeListOf<HTMLAnchorElement>} */ (
+      document.querySelectorAll("a[href*='/c/']")
+    );
     for (var i = 0; i < nodes.length; i += 1) {
       var href = normalizeConversationUrl(nodes[i].href);
       if (href === normalizedTarget) {
@@ -546,42 +532,11 @@
   async function rememberDiscoveredChats(entries) {
     var capture = await loadCapture();
     capture.lastUpdatedAt = new Date().toISOString();
-    capture.discoveredChats = mergeDiscoveredChats(capture.discoveredChats || [], entries);
+    capture.discoveredChats = mergeDiscoveredChats(
+      capture.discoveredChats || [],
+      entries,
+    );
     await setInStorage(CAPTURE_KEY, capture);
-  }
-
-  async function mergeVisibleSidebarIntoJob(job) {
-    var entries = await collectSidebarEntries();
-    await rememberDiscoveredChats(entries);
-
-    var seenUrls = dedupe((job.seenUrls || []).concat(entries.map(function (entry) {
-      return entry.url;
-    })));
-    job.seenUrls = seenUrls;
-
-    var knownPending = {};
-    (job.pendingUrls || []).forEach(function (url) {
-      knownPending[url] = true;
-    });
-
-    entries.forEach(function (entry) {
-      if (!entry.url) {
-        return;
-      }
-      if ((job.visitedUrls || []).indexOf(entry.url) >= 0) {
-        return;
-      }
-      if ((job.failedUrls || []).indexOf(entry.url) >= 0) {
-        return;
-      }
-      if (knownPending[entry.url]) {
-        return;
-      }
-      job.pendingUrls.push(entry.url);
-      knownPending[entry.url] = true;
-    });
-
-    job.pendingUrls = dedupe(job.pendingUrls || []);
   }
 
   async function scrollSidebarForMoreChats() {
@@ -589,7 +544,7 @@
     if (!containers.length) {
       return {
         moved: false,
-        atBottom: true
+        atBottom: true,
       };
     }
 
@@ -597,14 +552,18 @@
     var atBottom = true;
     for (var i = 0; i < containers.length; i += 1) {
       var element = containers[i];
-      var maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+      var maxScrollTop = Math.max(
+        0,
+        element.scrollHeight - element.clientHeight,
+      );
       var distanceFromBottom = maxScrollTop - element.scrollTop;
       if (distanceFromBottom > 8) {
         atBottom = false;
       }
       var nextScrollTop = Math.min(
         maxScrollTop,
-        element.scrollTop + Math.max(480, Math.floor(element.clientHeight * 1.25))
+        element.scrollTop +
+          Math.max(480, Math.floor(element.clientHeight * 1.25)),
       );
       if (nextScrollTop > element.scrollTop + 4) {
         element.scrollTop = nextScrollTop;
@@ -618,7 +577,7 @@
 
     return {
       moved: moved,
-      atBottom: atBottom
+      atBottom: atBottom,
     };
   }
 
@@ -639,14 +598,20 @@
   async function fetchSavedConversationIds() {
     try {
       var response = await chrome.runtime.sendMessage({
-        type: "byegpt:list-saved-conversations"
+        type: "byegpt:list-saved-conversations",
       });
-      if (!response || !response.ok || !Array.isArray(response.conversationIds)) {
+      if (
+        !response ||
+        !response.ok ||
+        !Array.isArray(response.conversationIds)
+      ) {
         return [];
       }
-      return dedupe(response.conversationIds.map(function (value) {
-        return sanitizeFilename(value);
-      }));
+      return dedupe(
+        response.conversationIds.map(function (value) {
+          return sanitizeFilename(value);
+        }),
+      );
     } catch (error) {
       return [];
     }
@@ -667,7 +632,7 @@
       var key = associatedId;
       var conversation = normalizeConversationRecord(
         capture.conversations[key] || emptyConversationRecord(associatedId),
-        associatedId
+        associatedId,
       );
       conversation.lastSeenAt = new Date().toISOString();
       conversation.apiEvents = conversation.apiEvents || [];
@@ -677,7 +642,7 @@
       }
       conversation.assets = mergeAssetRecords(
         conversation.assets || [],
-        extractAssetReferencesFromEvent(eventPayload, associatedId)
+        extractAssetReferencesFromEvent(eventPayload, associatedId),
       );
       capture.conversations[key] = conversation;
     }
@@ -687,7 +652,6 @@
     }
 
     await setInStorage(CAPTURE_KEY, capture);
-
   }
 
   function inferTitleFromPayload(payload) {
@@ -697,7 +661,10 @@
     if (typeof payload.title === "string" && payload.title.trim()) {
       return payload.title.trim();
     }
-    if (payload.conversation && typeof payload.conversation.title === "string") {
+    if (
+      payload.conversation &&
+      typeof payload.conversation.title === "string"
+    ) {
       return payload.conversation.title.trim();
     }
     return null;
@@ -742,8 +709,10 @@
       }
 
       var normalized = Object.assign({}, item, {
-        firstSeenAt: item.firstSeenAt || item.discoveredAt || new Date().toISOString(),
-        lastSeenAt: item.discoveredAt || item.lastSeenAt || new Date().toISOString()
+        firstSeenAt:
+          item.firstSeenAt || item.discoveredAt || new Date().toISOString(),
+        lastSeenAt:
+          item.discoveredAt || item.lastSeenAt || new Date().toISOString(),
       });
       byUrl[item.url] = normalized;
       merged.push(normalized);
@@ -812,7 +781,7 @@
       lastUpdatedAt: new Date().toISOString(),
       conversations: {},
       discoveredChats: [],
-      networkEvents: []
+      networkEvents: [],
     };
   }
 
@@ -830,7 +799,10 @@
       changed = true;
     }
 
-    if (!normalized.conversations || typeof normalized.conversations !== "object") {
+    if (
+      !normalized.conversations ||
+      typeof normalized.conversations !== "object"
+    ) {
       normalized.conversations = {};
       changed = true;
     } else {
@@ -840,7 +812,7 @@
     Object.keys(normalized.conversations).forEach(function (conversationId) {
       var record = normalizeConversationRecord(
         normalized.conversations[conversationId],
-        conversationId
+        conversationId,
       );
       if (record.__changed) {
         changed = true;
@@ -851,7 +823,7 @@
 
     return {
       capture: normalized,
-      changed: changed
+      changed: changed,
     };
   }
 
@@ -865,8 +837,13 @@
     }
 
     if (!Array.isArray(normalized.apiEvents)) {
-      if (Array.isArray(normalized.networkEvents) && normalized.networkEvents.length) {
-        normalized.apiEvents = normalized.networkEvents.map(normalizeStoredApiEvent);
+      if (
+        Array.isArray(normalized.networkEvents) &&
+        normalized.networkEvents.length
+      ) {
+        normalized.apiEvents = normalized.networkEvents.map(
+          normalizeStoredApiEvent,
+        );
       } else {
         normalized.apiEvents = [];
       }
@@ -938,9 +915,9 @@
   function mergeSettings(value) {
     return Object.assign(
       {
-        autoDownloadConversations: true
+        autoDownloadConversations: true,
       },
-      value || {}
+      value || {},
     );
   }
 
@@ -960,7 +937,7 @@
       conversation.apiEvents ? conversation.apiEvents.length : 0,
       conversation.assets ? conversation.assets.length : 0,
       conversation.title || "",
-      conversation.lastSeenAt || ""
+      conversation.lastSeenAt || "",
     ].join(":");
 
     var exportMetadata = conversation.exportMetadata || {};
@@ -970,7 +947,7 @@
 
     await downloadConversationAssets(conversationId, conversation);
 
-    var bundle = await buildConversationBundle(capture, conversationId, reason);
+    var bundle = await buildConversationBundle(capture, conversationId);
     var filename = buildConversationJsonPath(conversationId);
 
     var response = await chrome.runtime.sendMessage({
@@ -979,8 +956,8 @@
         filename: filename,
         data: bundle,
         saveAs: false,
-        conflictAction: "overwrite"
-      }
+        conflictAction: "overwrite",
+      },
     });
 
     if (!response || !response.ok) {
@@ -992,14 +969,13 @@
       downloadCount: Number(exportMetadata.downloadCount || 0) + 1,
       lastDownloadedFilename: filename,
       lastDownloadedReason: reason,
-      lastDownloadedSignature: signature
+      lastDownloadedSignature: signature,
     };
     capture.conversations[conversationId] = conversation;
     await setInStorage(CAPTURE_KEY, capture);
   }
 
-
-  async function buildConversationBundle(capture, conversationId, reason) {
+  async function buildConversationBundle(capture, conversationId) {
     var conversation = capture.conversations[conversationId];
     return {
       conversation_id: conversation.id,
@@ -1011,21 +987,28 @@
           original_url: asset.url,
           relative_path: asset.relativePath || null,
           source_event_ids: asset.sourceEventIds || [],
-          source_json_paths: asset.sourceJsonPaths || []
+          source_json_paths: asset.sourceJsonPaths || [],
         };
-      })
+      }),
     };
   }
 
+  // Prefer the route that matches the asset's expected auth model:
+  // page-context fetches for session-protected OpenAI URLs, direct browser downloads otherwise.
   async function downloadConversationAssets(conversationId, conversation) {
     var assets = conversation.assets || [];
     for (var i = 0; i < assets.length; i += 1) {
       var asset = assets[i];
-      if (asset.relativePath && asset.downloadedAt && asset.lastDownloadedUrl === asset.url) {
+      if (
+        asset.relativePath &&
+        asset.downloadedAt &&
+        asset.lastDownloadedUrl === asset.url
+      ) {
         continue;
       }
 
-      var filename = asset.relativePath || buildAssetRelativePath(conversationId, asset);
+      var filename =
+        asset.relativePath || buildAssetRelativePath(conversationId, asset);
       var assetFetch = await downloadAssetWithBestRoute(asset, filename);
 
       if (!assetFetch) {
@@ -1044,10 +1027,16 @@
     var primaryRoute = shouldUsePageAssetFetch(asset.url) ? "page" : "direct";
 
     if (primaryRoute === "page") {
-      return (await fetchAssetFromPage(asset)) || (await downloadAssetDirectly(asset, filename));
+      return (
+        (await fetchAssetFromPage(asset)) ||
+        (await downloadAssetDirectly(asset, filename))
+      );
     }
 
-    return (await downloadAssetDirectly(asset, filename)) || (await fetchAssetFromPage(asset));
+    return (
+      (await downloadAssetDirectly(asset, filename)) ||
+      (await fetchAssetFromPage(asset))
+    );
   }
 
   async function downloadAssetDirectly(asset, filename) {
@@ -1059,17 +1048,16 @@
           type: "byegpt:download-asset",
           payload: {
             url: candidates[i],
-            filename: filename
-          }
+            filename: filename,
+          },
         });
 
         if (response && response.ok) {
           return {
-            url: candidates[i]
+            url: candidates[i],
           };
         }
-      } catch (error) {
-      }
+      } catch (error) {}
     }
 
     return null;
@@ -1081,15 +1069,19 @@
     for (var i = 0; i < candidates.length; i += 1) {
       try {
         var payload = await requestAssetBytesViaPage(candidates[i]);
-        var dataUrl = await arrayBufferToDataUrl(payload.bytes, payload.contentType || asset.contentType || "");
+        var dataUrl = await arrayBufferToDataUrl(
+          payload.bytes,
+          payload.contentType || asset.contentType || "",
+        );
         return {
           url: payload.url || candidates[i],
           contentType: payload.contentType || "",
-          byteLength: payload.byteLength || (payload.bytes ? payload.bytes.byteLength : 0),
-          dataUrl: dataUrl
+          byteLength:
+            payload.byteLength ||
+            (payload.bytes ? payload.bytes.byteLength : 0),
+          dataUrl: dataUrl,
         };
-      } catch (error) {
-      }
+      } catch (error) {}
     }
 
     return null;
@@ -1117,7 +1109,11 @@
     while (Date.now() < deadline) {
       var capture = await loadCapture();
       var conversation = capture.conversations[conversationId];
-      if (conversation && conversation.apiEvents && conversation.apiEvents.length) {
+      if (
+        conversation &&
+        conversation.apiEvents &&
+        conversation.apiEvents.length
+      ) {
         return true;
       }
       await sleep(250);
@@ -1132,7 +1128,7 @@
       firstSeenAt: new Date().toISOString(),
       lastSeenAt: new Date().toISOString(),
       apiEvents: [],
-      assets: []
+      assets: [],
     };
   }
 
@@ -1143,27 +1139,44 @@
         url: eventPayload.url,
         path: eventPayload.path,
         search: eventPayload.search || "",
-        method: eventPayload.method
+        method: eventPayload.method,
       },
       response: {
         status: eventPayload.status,
         ok: Boolean(eventPayload.ok),
         content_type: eventPayload.contentType || null,
         headers: eventPayload.responseHeaders || {},
-        body: eventPayload.body
-      }
+        body: eventPayload.body,
+      },
     };
   }
 
   function extractAssetReferencesFromEvent(eventPayload, conversationId) {
     var collector = [];
-    collectAssetReferences(eventPayload.body, "$", collector, eventPayload.id, conversationId);
+    collectAssetReferences(
+      eventPayload.body,
+      "$",
+      collector,
+      eventPayload.id,
+      conversationId,
+    );
     return dedupeAssetRecords(collector);
   }
 
-  function collectAssetReferences(value, path, collector, eventId, conversationId) {
+  function collectAssetReferences(
+    value,
+    path,
+    collector,
+    eventId,
+    conversationId,
+  ) {
     if (typeof value === "string") {
-      var asset = createAssetRecordFromUrl(value, path, eventId, conversationId);
+      var asset = createAssetRecordFromUrl(
+        value,
+        path,
+        eventId,
+        conversationId,
+      );
       if (asset) {
         collector.push(asset);
       }
@@ -1176,13 +1189,25 @@
 
     if (Array.isArray(value)) {
       for (var i = 0; i < value.length; i += 1) {
-        collectAssetReferences(value[i], path + "[" + i + "]", collector, eventId, conversationId);
+        collectAssetReferences(
+          value[i],
+          path + "[" + i + "]",
+          collector,
+          eventId,
+          conversationId,
+        );
       }
       return;
     }
 
     Object.keys(value).forEach(function (key) {
-      collectAssetReferences(value[key], path + "." + key, collector, eventId, conversationId);
+      collectAssetReferences(
+        value[key],
+        path + "." + key,
+        collector,
+        eventId,
+        conversationId,
+      );
     });
   }
 
@@ -1202,7 +1227,7 @@
     var extension = inferAssetExtension(parsed);
     var relativePath = buildAssetRelativePath(conversationId, {
       assetId: assetId,
-      extension: extension
+      extension: extension,
     });
 
     return {
@@ -1211,7 +1236,7 @@
       extension: extension,
       relativePath: relativePath,
       sourceEventIds: [eventId],
-      sourceJsonPaths: [jsonPath]
+      sourceJsonPaths: [jsonPath],
     };
   }
 
@@ -1230,7 +1255,9 @@
     }
 
     return (
-      /(\.png|\.jpg|\.jpeg|\.gif|\.webp|\.svg|\.mp4|\.webm|\.mp3|\.wav|\.m4a|\.pdf|\.csv|\.txt|\.json)$/i.test(path) ||
+      /(\.png|\.jpg|\.jpeg|\.gif|\.webp|\.svg|\.mp4|\.webm|\.mp3|\.wav|\.m4a|\.pdf|\.csv|\.txt|\.json)$/i.test(
+        path,
+      ) ||
       path.indexOf("/files/") >= 0 ||
       path.indexOf("/download") >= 0 ||
       path.indexOf("/assets/") >= 0 ||
@@ -1287,8 +1314,12 @@
 
       if (byUrl[asset.url]) {
         var current = byUrl[asset.url];
-        current.sourceEventIds = dedupe((current.sourceEventIds || []).concat(asset.sourceEventIds || []));
-        current.sourceJsonPaths = dedupe((current.sourceJsonPaths || []).concat(asset.sourceJsonPaths || []));
+        current.sourceEventIds = dedupe(
+          (current.sourceEventIds || []).concat(asset.sourceEventIds || []),
+        );
+        current.sourceJsonPaths = dedupe(
+          (current.sourceJsonPaths || []).concat(asset.sourceJsonPaths || []),
+        );
         if (!current.relativePath && asset.relativePath) {
           current.relativePath = asset.relativePath;
         }
@@ -1301,7 +1332,7 @@
         extension: asset.extension || ".bin",
         relativePath: asset.relativePath || null,
         sourceEventIds: dedupe(asset.sourceEventIds || []),
-        sourceJsonPaths: dedupe(asset.sourceJsonPaths || [])
+        sourceJsonPaths: dedupe(asset.sourceJsonPaths || []),
       };
       byUrl[asset.url] = normalized;
       merged.push(normalized);
@@ -1324,10 +1355,31 @@
   }
 
   function sanitizeFilename(value) {
-    return String(value)
-      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
-      .replace(/\s+/g, "-")
-      .slice(0, 140);
+    var sanitized = "";
+    var raw = String(value);
+
+    for (var i = 0; i < raw.length; i += 1) {
+      var character = raw[i];
+      var code = raw.charCodeAt(i);
+      if (
+        code < 32 ||
+        character === "<" ||
+        character === ">" ||
+        character === ":" ||
+        character === '"' ||
+        character === "/" ||
+        character === "\\" ||
+        character === "|" ||
+        character === "?" ||
+        character === "*"
+      ) {
+        sanitized += "_";
+        continue;
+      }
+      sanitized += character;
+    }
+
+    return sanitized.replace(/\s+/g, "-").slice(0, 140);
   }
 
   function countDownloadedConversations(conversations) {
@@ -1361,7 +1413,7 @@
         latest = {
           id: id,
           label: conversation.title || id,
-          downloadedAt: conversation.exportMetadata.downloadedAt
+          downloadedAt: conversation.exportMetadata.downloadedAt,
         };
       }
     });
@@ -1456,23 +1508,20 @@
 
     try {
       window.removeEventListener("message", onWindowMessage);
-    } catch (error) {
-    }
+    } catch (error) {}
 
     try {
       if (chrome && chrome.runtime && chrome.runtime.onMessage) {
         chrome.runtime.onMessage.removeListener(onRuntimeMessage);
       }
-    } catch (error) {
-    }
+    } catch (error) {}
 
     try {
       if (overlayRefreshTimer) {
         clearInterval(overlayRefreshTimer);
         overlayRefreshTimer = null;
       }
-    } catch (error) {
-    }
+    } catch (error) {}
   }
 
   function scheduleResumeRetry() {
@@ -1493,16 +1542,14 @@
   }
 
   function startOverlayRefresh() {
-    refreshOverlay().catch(function () {
-    });
+    refreshOverlay().catch(function () {});
 
     if (overlayRefreshTimer) {
       clearInterval(overlayRefreshTimer);
     }
 
     overlayRefreshTimer = setInterval(function () {
-      refreshOverlay().catch(function () {
-      });
+      refreshOverlay().catch(function () {});
     }, 1000);
   }
 
@@ -1530,8 +1577,10 @@
       return;
     }
 
-    var visited = status.job && status.job.visitedUrls ? status.job.visitedUrls.length : 0;
-    var pending = status.job && status.job.pendingUrls ? status.job.pendingUrls.length : 0;
+    var visited =
+      status.job && status.job.visitedUrls ? status.job.visitedUrls.length : 0;
+    var pending =
+      status.job && status.job.pendingUrls ? status.job.pendingUrls.length : 0;
     var skipped =
       status.job && status.job.skippedUrls
         ? status.job.skippedUrls.length
@@ -1539,20 +1588,66 @@
           ? status.job.skippedCount
           : 0;
     var knownTotal = status.knownTotalCount || visited + pending || 0;
-    var progressRatio = knownTotal ? Math.min(1, (visited + skipped) / knownTotal) : 0;
-    var currentTarget = status.job && status.job.currentUrl ? status.job.currentUrl : status.url;
+    var progressRatio = knownTotal
+      ? Math.min(1, (visited + skipped) / knownTotal)
+      : 0;
+    var currentTarget =
+      status.job && status.job.currentUrl ? status.job.currentUrl : status.url;
     var lastSaved = status.latestDownload
-      ? status.latestDownload.label + " at " + new Date(status.latestDownload.downloadedAt).toLocaleTimeString()
+      ? status.latestDownload.label +
+        " at " +
+        new Date(status.latestDownload.downloadedAt).toLocaleTimeString()
       : "Nothing saved yet";
 
-    overlay.querySelector("[data-role='status']").textContent = formatOverlayStatus(status.job);
-    overlay.querySelector("[data-role='bar']").style.width = Math.round(progressRatio * 100) + "%";
-    overlay.querySelector("[data-role='summary']").textContent =
-      visited + " visited / " + pending + " pending / " + skipped + " skipped / " + knownTotal + " known";
-    overlay.querySelector("[data-role='downloads']").textContent =
-      status.downloadedConversationCount + " saved, " + status.networkEventCount + " API responses captured";
-    overlay.querySelector("[data-role='current']").textContent = "Current: " + shortenLabel(currentTarget);
-    overlay.querySelector("[data-role='last']").textContent = "Last saved: " + shortenLabel(lastSaved);
+    var statusNode = /** @type {HTMLElement | null} */ (
+      overlay.querySelector("[data-role='status']")
+    );
+    var barNode = /** @type {HTMLElement | null} */ (
+      overlay.querySelector("[data-role='bar']")
+    );
+    var summaryNode = /** @type {HTMLElement | null} */ (
+      overlay.querySelector("[data-role='summary']")
+    );
+    var downloadsNode = /** @type {HTMLElement | null} */ (
+      overlay.querySelector("[data-role='downloads']")
+    );
+    var currentNode = /** @type {HTMLElement | null} */ (
+      overlay.querySelector("[data-role='current']")
+    );
+    var lastNode = /** @type {HTMLElement | null} */ (
+      overlay.querySelector("[data-role='last']")
+    );
+
+    if (statusNode) {
+      statusNode.textContent = formatOverlayStatus(status.job);
+    }
+    if (barNode) {
+      barNode.style.width = Math.round(progressRatio * 100) + "%";
+    }
+    if (summaryNode) {
+      summaryNode.textContent =
+        visited +
+        " visited / " +
+        pending +
+        " pending / " +
+        skipped +
+        " skipped / " +
+        knownTotal +
+        " known";
+    }
+    if (downloadsNode) {
+      downloadsNode.textContent =
+        status.downloadedConversationCount +
+        " saved, " +
+        status.networkEventCount +
+        " API responses captured";
+    }
+    if (currentNode) {
+      currentNode.textContent = "Current: " + shortenLabel(currentTarget);
+    }
+    if (lastNode) {
+      lastNode.textContent = "Last saved: " + shortenLabel(lastSaved);
+    }
   }
 
   function ensureOverlay() {
@@ -1579,7 +1674,8 @@
     overlay.style.color = "#f8fafc";
     overlay.style.boxShadow = "0 20px 50px rgba(2, 6, 23, 0.45)";
     overlay.style.backdropFilter = "blur(8px)";
-    overlay.style.fontFamily = "ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    overlay.style.fontFamily =
+      "ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
     overlay.style.pointerEvents = "none";
     overlay.innerHTML =
       '<div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">byegpt</div>' +
@@ -1639,7 +1735,7 @@
 
       pendingAssetFetches[requestId] = {
         resolve: resolve,
-        reject: reject
+        reject: reject,
       };
 
       window.postMessage(
@@ -1648,17 +1744,19 @@
           type: "asset-fetch-request",
           payload: {
             requestId: requestId,
-            url: url
-          }
+            url: url,
+          },
         },
-        "*"
+        "*",
       );
 
       setTimeout(function () {
         if (!pendingAssetFetches[requestId]) {
           return;
         }
-        pendingAssetFetches[requestId].reject(new Error("Asset fetch timed out."));
+        pendingAssetFetches[requestId].reject(
+          new Error("Asset fetch timed out."),
+        );
         delete pendingAssetFetches[requestId];
       }, 15000);
     });
@@ -1666,7 +1764,7 @@
 
   function arrayBufferToDataUrl(bytes, contentType) {
     var blob = new Blob([bytes], {
-      type: contentType || "application/octet-stream"
+      type: contentType || "application/octet-stream",
     });
 
     return new Promise(function (resolve, reject) {
@@ -1683,16 +1781,22 @@
 
   function findDomAssetCandidateUrls(asset) {
     var candidates = [];
-    var nodes = document.querySelectorAll("main img, main source[src], main video[src], main audio[src], main a[href]");
+    var nodes = document.querySelectorAll(
+      "main img, main source[src], main video[src], main audio[src], main a[href]",
+    );
     var expectedName = asset.assetId || "";
 
     for (var i = 0; i < nodes.length; i += 1) {
+      var element =
+        /** @type {Element & { currentSrc?: string, src?: string, href?: string }} */ (
+          nodes[i]
+        );
       var candidate =
-        nodes[i].currentSrc ||
-        nodes[i].src ||
-        nodes[i].href ||
-        nodes[i].getAttribute("src") ||
-        nodes[i].getAttribute("href");
+        element.currentSrc ||
+        element.src ||
+        element.href ||
+        element.getAttribute("src") ||
+        element.getAttribute("href");
 
       if (!candidate) {
         continue;

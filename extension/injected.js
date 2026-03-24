@@ -1,18 +1,27 @@
+// This script runs in the page context so it can observe the same fetch/XHR traffic
+// and session-bound asset requests that the ChatGPT app itself uses.
 (function () {
-  if (window.__byegptInjected) {
+  /** @typedef {{ method: string, url: string }} ByegptXhrMeta */
+
+  var byegptWindow =
+    /** @type {Window & typeof globalThis & { __byegptInjected?: boolean }} */ (
+      window
+    );
+
+  if (byegptWindow.__byegptInjected) {
     return;
   }
 
-  window.__byegptInjected = true;
+  byegptWindow.__byegptInjected = true;
 
   function emit(payload) {
     window.postMessage(
       {
         source: "byegpt",
         type: "network-event",
-        payload: payload
+        payload: payload,
       },
-      "*"
+      "*",
     );
   }
 
@@ -21,10 +30,10 @@
       {
         source: "byegpt",
         type: "asset-fetch-response",
-        payload: payload
+        payload: payload,
       },
       "*",
-      transfer || []
+      transfer || [],
     );
   }
 
@@ -85,7 +94,7 @@
       capturedAt: new Date().toISOString(),
       contentType: contentType,
       responseHeaders: collectHeaders(response.headers),
-      body: json
+      body: json,
     });
   }
 
@@ -98,10 +107,17 @@
     window.fetch = async function patchedFetch(input, init) {
       var response = await originalFetch.apply(this, arguments);
       try {
-        var url = typeof input === "string" ? input : input && input.url;
+        var url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input && input.url;
         var method =
           (init && init.method) ||
-          (input && input.method) ||
+          (typeof input !== "string" && !(input instanceof URL) && input
+            ? input.method
+            : null) ||
           "GET";
         if (url && isRelevantUrl(url)) {
           var parsedUrl = new URL(url, window.location.href);
@@ -110,13 +126,12 @@
               url: parsedUrl.toString(),
               path: parsedUrl.pathname,
               search: parsedUrl.search,
-              method: String(method).toUpperCase()
+              method: String(method).toUpperCase(),
             },
-            response.clone()
+            response.clone(),
           );
         }
-      } catch (error) {
-      }
+      } catch (error) {}
       return response;
     };
   }
@@ -126,15 +141,18 @@
     var originalSend = XMLHttpRequest.prototype.send;
 
     XMLHttpRequest.prototype.open = function patchedOpen(method, url) {
-      this.__byegptMeta = {
+      var xhr =
+        /** @type {XMLHttpRequest & { __byegptMeta?: ByegptXhrMeta }} */ (this);
+      xhr.__byegptMeta = {
         method: String(method || "GET").toUpperCase(),
-        url: url
+        url: url,
       };
       return originalOpen.apply(this, arguments);
     };
 
     XMLHttpRequest.prototype.send = function patchedSend() {
-      var xhr = this;
+      var xhr =
+        /** @type {XMLHttpRequest & { __byegptMeta?: ByegptXhrMeta }} */ (this);
       xhr.addEventListener("load", function () {
         try {
           var meta = xhr.__byegptMeta;
@@ -165,12 +183,11 @@
             capturedAt: new Date().toISOString(),
             contentType: contentType,
             responseHeaders: {
-              "content-type": contentType
+              "content-type": contentType,
             },
-            body: json
+            body: json,
           });
-        } catch (error) {
-        }
+        } catch (error) {}
       });
 
       return originalSend.apply(this, arguments);
@@ -184,7 +201,11 @@
       }
 
       var data = event.data;
-      if (!data || data.source !== "byegpt" || data.type !== "asset-fetch-request") {
+      if (
+        !data ||
+        data.source !== "byegpt" ||
+        data.type !== "asset-fetch-request"
+      ) {
         return;
       }
 
@@ -192,7 +213,7 @@
         emitAssetFetchResponse({
           requestId: data.payload && data.payload.requestId,
           ok: false,
-          error: String(error)
+          error: String(error),
         });
       });
     });
@@ -203,13 +224,13 @@
       emitAssetFetchResponse({
         requestId: payload && payload.requestId,
         ok: false,
-        error: "Missing asset fetch payload."
+        error: "Missing asset fetch payload.",
       });
       return;
     }
 
     var response = await fetch(payload.url, {
-      credentials: "include"
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -217,7 +238,7 @@
         requestId: payload.requestId,
         ok: false,
         status: response.status,
-        error: "HTTP " + response.status
+        error: "HTTP " + response.status,
       });
       return;
     }
@@ -230,9 +251,9 @@
         url: response.url || payload.url,
         contentType: response.headers.get("content-type") || "",
         byteLength: arrayBuffer.byteLength,
-        bytes: arrayBuffer
+        bytes: arrayBuffer,
       },
-      [arrayBuffer]
+      [arrayBuffer],
     );
   }
 

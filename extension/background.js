@@ -1,3 +1,5 @@
+// Background runtime responsibilities are intentionally narrow:
+// accept download requests from the content script and emit local files.
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
   if (!message || !message.type) {
     return;
@@ -48,7 +50,8 @@ async function downloadJson(payload) {
     url: url,
     filename: payload.filename,
     saveAs: Boolean(payload.saveAs),
-    conflictAction: payload.conflictAction || (payload.saveAs ? "uniquify" : "overwrite")
+    conflictAction:
+      payload.conflictAction || (payload.saveAs ? "uniquify" : "overwrite"),
   });
   return downloadId;
 }
@@ -62,14 +65,15 @@ async function downloadAsset(payload) {
     url: payload.url || payload.dataUrl,
     filename: payload.filename,
     saveAs: false,
-    conflictAction: "overwrite"
+    conflictAction: "overwrite",
   });
   return downloadId;
 }
 
 async function listSavedConversationIds() {
   var items = await chrome.downloads.search({
-    filenameRegex: "[\\\\/]byegpt[\\\\/]conversations[\\\\/](?!assets[\\\\/]).+\\.json$"
+    filenameRegex:
+      "[\\\\/]byegpt[\\\\/]conversations[\\\\/](?!assets[\\\\/]).+\\.json$",
   });
 
   var ids = [];
@@ -79,7 +83,7 @@ async function listSavedConversationIds() {
     }
 
     var match = item.filename.match(
-      /[\\/]byegpt[\\/]conversations[\\/](?!assets[\\/])([^\\/]+?)(?:__[^\\/]+)?\.json$/i
+      /[\\/]byegpt[\\/]conversations[\\/](?!assets[\\/])([^\\/]+?)(?:__[^\\/]+)?\.json$/i,
     );
     if (match && match[1]) {
       ids.push(match[1]);

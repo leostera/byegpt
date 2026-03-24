@@ -1,6 +1,8 @@
-# byegpt
+# ByeGPT
 
-`byegpt` exports the OpenAI data surfaces you can actually reach.
+`ByeGPT` exports the OpenAI data surfaces you can actually reach.
+
+The repository name and Python package stay `byegpt`. The Chrome extension display name is `ByeGPT`.
 
 There are two modes:
 
@@ -46,6 +48,65 @@ What it does not do:
 The extension stores data locally in extension storage until you clear it.
 Each per-conversation file now contains only captured API responses plus asset references.
 DOM snapshots and crawl metadata are not included in those conversation exports.
+
+### Package the extension
+
+Generate the store assets and package ZIP:
+
+```bash
+python3 scripts/generate_store_assets.py
+python3 scripts/package_extension.py
+```
+
+This writes:
+
+- `dist/byegpt-extension-v<version>.zip`
+- `dist/byegpt-extension-v<version>.zip.sha256`
+- `store-assets/` listing images
+
+### Chrome Web Store prep
+
+The repo now includes:
+
+- static pages in `site/` for a homepage and privacy policy
+- store listing guidance in [`docs/chrome-web-store.md`](/Users/leostera/Developer/github.com/leostera/byegpt/docs/chrome-web-store.md)
+- GitHub Actions for validation, packaging, and optional Pages deployment
+
+Before submitting, you should still do one real browser pass and confirm the screenshots match the latest UI.
+
+### Developer hooks and checks
+
+Install the JavaScript dev tooling and enable the local pre-commit hook:
+
+```bash
+npm install
+git config --local core.hooksPath .githooks
+```
+
+The pre-commit hook runs:
+
+- Biome format checks
+- ESLint
+- TypeScript `checkJs` typechecks over the extension JavaScript
+- JavaScript smoke tests
+- Python unit tests
+
+Useful commands:
+
+```bash
+npm run check:all
+npm run format
+npm run build:extension
+```
+
+### AGENTS routing
+
+This repo uses modular `AGENTS.md` files:
+
+- [`AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/AGENTS.md) routes to the right sub-guide
+- [`extension/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/extension/AGENTS.md) covers extension work
+- [`byegpt/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/byegpt/AGENTS.md) covers the Python CLI
+- [`scripts/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/scripts/AGENTS.md) covers packaging and asset generation
 
 ## Python CLI
 
@@ -113,4 +174,13 @@ Run Python tests:
 
 ```bash
 python3 -m unittest discover -s tests -v
+```
+
+Run extension syntax checks:
+
+```bash
+node --check extension/background.js
+node --check extension/content.js
+node --check extension/injected.js
+node --check extension/popup.js
 ```
