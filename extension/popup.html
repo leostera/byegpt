@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>byegpt</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <h1>byegpt</h1>
+        <p>Export chats from your current ChatGPT session.</p>
+      </header>
+
+      <section class="status">
+        <div class="metric">
+          <span class="label">Chats</span>
+          <strong id="conversationCount">0</strong>
+        </div>
+        <div class="metric">
+          <span class="label">Network</span>
+          <strong id="networkEventCount">0</strong>
+        </div>
+        <div class="metric">
+          <span class="label">Discovered</span>
+          <strong id="discoveredChatCount">0</strong>
+        </div>
+        <div class="metric">
+          <span class="label">Downloaded</span>
+          <strong id="downloadedConversationCount">0</strong>
+        </div>
+      </section>
+
+      <section class="job">
+        <div class="label">Crawler</div>
+        <div id="jobStatus" class="jobStatus">Idle</div>
+      </section>
+
+      <section class="activity">
+        <div class="label">Activity</div>
+        <div id="activityStatus" class="activityStatus">No downloads yet</div>
+      </section>
+
+      <section class="actions">
+        <button id="captureCurrent" class="button secondary">Capture Current Chat</button>
+        <button id="startCrawl" class="button primary">Start Download</button>
+        <button id="stopCrawl" class="button secondary">Stop Download</button>
+        <button id="restartCrawl" class="button secondary">Restart</button>
+        <button id="exportJson" class="button primary">Export JSON</button>
+      </section>
+
+      <p id="message" class="message"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
