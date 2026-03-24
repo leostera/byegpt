@@ -83,6 +83,29 @@ The extension processes conversation content locally in the browser and writes i
 - Small promo image: `store-assets/promo-small-440x280.png`
 - Optional marquee promo image: `store-assets/promo-marquee-1400x560.png`
 
+## GitHub Actions publishing
+
+This repository includes [`publish-chrome-web-store.yml`](/Users/leostera/Developer/github.com/leostera/byegpt/.github/workflows/publish-chrome-web-store.yml), which uses the [`chrome-webstore-upload-cli`](https://www.npmjs.com/package/chrome-webstore-upload-cli) package to upload a new package and optionally submit it for review.
+
+### Required repository configuration
+
+- Repository variable: `CWS_EXTENSION_ID`
+- Repository secret: `CWS_CLIENT_ID`
+- Repository secret: `CWS_CLIENT_SECRET`
+- Repository secret: `CWS_REFRESH_TOKEN`
+
+### OAuth setup
+
+1. Create or reuse a Google OAuth client for the Chrome Web Store API flow.
+2. Generate a refresh token for the Chrome Web Store publisher account.
+3. Store those values in GitHub as `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, and `CWS_REFRESH_TOKEN`.
+
+### Workflow behavior
+
+- On `workflow_dispatch`, the workflow uploads the package and optionally submits it for review depending on the `publish` input.
+- On `v*` tag pushes, the workflow uploads and publishes automatically.
+- The workflow runs the same repo checks as local pre-commit before attempting the upload.
+
 ## Manual steps before submission
 
 1. Verify the latest screenshots still match the current extension UI.

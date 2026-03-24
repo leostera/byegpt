@@ -1,0 +1,70 @@
+name: Publish to Chrome Web Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Submit the uploaded package for review and publish when approved"
+        required: true
+        type: boolean
+        default: true
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+      CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate publish configuration
+        run: |
+          test -n "$EXTENSION_ID" || (echo "Missing repository variable CWS_EXTENSION_ID" && exit 1)
+          test -n "$CLIENT_ID" || (echo "Missing repository secret CWS_CLIENT_ID" && exit 1)
+          test -n "$CLIENT_SECRET" || (echo "Missing repository secret CWS_CLIENT_SECRET" && exit 1)
+          test -n "$REFRESH_TOKEN" || (echo "Missing repository secret CWS_REFRESH_TOKEN" && exit 1)
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install JavaScript dev dependencies
+        run: npm install
+
+      - name: Generate store assets
+        run: npm run generate:assets
+
+      - name: Run repository checks
+        run: npm run check:all
+
+      - name: Package extension ZIP
+        run: npm run build:extension
+
+      - name: Upload package
+        if: github.event_name != 'push' && !inputs.publish
+        run: |
+          PACKAGE_PATH="$(ls dist/byegpt-extension-v*.zip | head -n 1)"
+          npx chrome-webstore-upload upload --source "$PACKAGE_PATH"
+
+      - name: Upload and publish package
+        if: github.event_name == 'push' || inputs.publish
+        run: |
+          PACKAGE_PATH="$(ls dist/byegpt-extension-v*.zip | head -n 1)"
+          npx chrome-webstore-upload --source "$PACKAGE_PATH"

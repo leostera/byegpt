@@ -30,7 +30,13 @@ export default [
     },
   },
   {
-    files: ["scripts/**/*.js", ".github/**/*.js", "tests-js/**/*.mjs"],
+    files: [
+      "scripts/**/*.js",
+      "scripts/**/*.mjs",
+      ".github/**/*.js",
+      "tests-js/**/*.mjs",
+      "vite.config.mjs",
+    ],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",

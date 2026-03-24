@@ -1,17 +1,12 @@
 # ByeGPT
 
-`ByeGPT` exports the OpenAI data surfaces you can actually reach.
+`ByeGPT` is a Chrome extension for exporting your own visible ChatGPT chats from a logged-in browser session into local JSON files.
 
-The repository name and Python package stay `byegpt`. The Chrome extension display name is `ByeGPT`.
-
-There are two modes:
-
-- A Chrome extension for exporting your own visible ChatGPT chats from a logged-in browser session.
-- A Python CLI for supported API-side objects and consumer export zips.
+The repository name stays `byegpt`. The shipped product is the `ByeGPT` Chrome extension plus the small build and publishing scripts around it.
 
 ## Chrome Extension
 
-The extension is the recommended path for a single-user ChatGPT Business workspace where the built-in export is unavailable.
+The extension is aimed at the single-user case where the built-in ChatGPT export is unavailable or insufficient.
 
 What it does:
 
@@ -54,8 +49,8 @@ DOM snapshots and crawl metadata are not included in those conversation exports.
 Generate the store assets and package ZIP:
 
 ```bash
-python3 scripts/generate_store_assets.py
-python3 scripts/package_extension.py
+npm run generate:assets
+npm run build:extension
 ```
 
 This writes:
@@ -71,8 +66,24 @@ The repo now includes:
 - static pages in `site/` for a homepage and privacy policy
 - store listing guidance in [`docs/chrome-web-store.md`](/Users/leostera/Developer/github.com/leostera/byegpt/docs/chrome-web-store.md)
 - GitHub Actions for validation, packaging, and optional Pages deployment
+- a GitHub Actions workflow for Chrome Web Store upload/publish
 
 Before submitting, you should still do one real browser pass and confirm the screenshots match the latest UI.
+
+### Chrome Web Store publish workflow
+
+The repository includes [`publish-chrome-web-store.yml`](/Users/leostera/Developer/github.com/leostera/byegpt/.github/workflows/publish-chrome-web-store.yml), which can upload a packaged extension to the Chrome Web Store and optionally submit it for review.
+
+Set these repository values first:
+
+- repository variable `CWS_EXTENSION_ID`
+- repository secret `CWS_CLIENT_ID`
+- repository secret `CWS_CLIENT_SECRET`
+- repository secret `CWS_REFRESH_TOKEN`
+
+The workflow uses the [`chrome-webstore-upload-cli`](https://www.npmjs.com/package/chrome-webstore-upload-cli) package, which expects the standard Chrome Web Store OAuth client credentials and refresh token flow.
+
+You can trigger the workflow manually from GitHub Actions, or push a `v*` tag to upload and publish automatically.
 
 ### Developer hooks and checks
 
@@ -88,14 +99,15 @@ The pre-commit hook runs:
 - Biome format checks
 - ESLint
 - TypeScript `checkJs` typechecks over the extension JavaScript
+- Python syntax checks for the helper scripts
 - JavaScript smoke tests
-- Python unit tests
 
 Useful commands:
 
 ```bash
 npm run check:all
 npm run format
+npm run dev
 npm run build:extension
 ```
 
@@ -105,82 +117,19 @@ This repo uses modular `AGENTS.md` files:
 
 - [`AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/AGENTS.md) routes to the right sub-guide
 - [`extension/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/extension/AGENTS.md) covers extension work
-- [`byegpt/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/byegpt/AGENTS.md) covers the Python CLI
 - [`scripts/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/scripts/AGENTS.md) covers packaging and asset generation
-
-## Python CLI
-
-The CLI covers officially supported surfaces:
-
-- Import a ChatGPT consumer export `.zip` and normalize JSON payloads.
-- Export API-side Responses and Conversations data when you already know the object IDs.
-
-### Install
-
-```bash
-python3 -m pip install -e .
-```
-
-Or run it directly:
-
-```bash
-python3 -m byegpt --help
-```
-
-### Usage
-
-Import an official ChatGPT export archive:
-
-```bash
-python3 -m byegpt import-chatgpt-export ~/Downloads/chatgpt-export.zip ./exports/chatgpt
-```
-
-Export known API object IDs:
-
-```bash
-export OPENAI_API_KEY=...
-python3 -m byegpt export-api ./exports/api \
-  --conversation conv_123 \
-  --response resp_456
-```
-
-Read IDs from files:
-
-```bash
-python3 -m byegpt export-api ./exports/api \
-  --conversation-file conversations.txt \
-  --response-file responses.txt
-```
-
-`conversations.txt` and `responses.txt` are newline-delimited. Blank lines and `# comments` are ignored.
-
-### Output layout
-
-`import-chatgpt-export` writes:
-
-- `raw/`: every file from the archive, preserved as-is
-- `normalized/`: pretty-printed JSON files from the archive
-- `manifest.json`: summary, hashes, and file inventory
-
-`export-api` writes:
-
-- `conversations/<id>.json`
-- `responses/<id>.json`
-- `manifest.json`
+- [`tests-js/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/tests-js/AGENTS.md) covers the smoke tests
 
 ## Development
 
-Run Python tests:
+Run the full local gate:
 
 ```bash
-python3 -m unittest discover -s tests -v
+npm run check:all
 ```
 
-Run extension syntax checks:
+Build a distributable package:
 
 ```bash
-node --check extension/background.js
-node --check extension/content.js
-node --check extension/injected.js
-node --check extension/popup.js
+npm run build:extension
 ```

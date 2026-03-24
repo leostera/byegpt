@@ -5,9 +5,8 @@ This file is intentionally thin. Use it to route into the part of the repository
 ## First stop
 
 - For Chrome extension work, read [`extension/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/extension/AGENTS.md).
-- For the Python CLI package, read [`byegpt/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/byegpt/AGENTS.md).
 - For automation and packaging scripts, read [`scripts/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/scripts/AGENTS.md).
-- For tests, read [`tests/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/tests/AGENTS.md).
+- For smoke tests, read [`tests-js/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/tests-js/AGENTS.md).
 - For static site or privacy-policy changes, read [`site/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/site/AGENTS.md).
 - For store listing and publication docs, read [`docs/AGENTS.md`](/Users/leostera/Developer/github.com/leostera/byegpt/docs/AGENTS.md).
 
