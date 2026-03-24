@@ -12,7 +12,6 @@ It is built for the simple case:
 
 - one JSON file per conversation
 - downloaded assets grouped under that conversation
-- an optional combined JSON export
 - a visible in-page progress tracker while the crawl runs
 
 Everything is local-first. ByeGPT does not use an API key and does not ship your exported chat data to a backend operated by this project.
@@ -43,10 +42,9 @@ If you built from source, select [`dist/unpacked`](/Users/leostera/Developer/git
 
 1. Sign in to ChatGPT in Chrome.
 2. Open `https://chatgpt.com/`.
-3. Click the ByeGPT extension.
-4. Click `Start Download`.
-5. Close the popup and let the tab run.
-6. Watch the in-page tracker in the bottom-right corner.
+3. Use the injected ByeGPT overlay in the bottom-right corner.
+4. Click `Start Downloading`.
+5. Let the tab run while the overlay tracks progress.
 
 ByeGPT will:
 
@@ -54,6 +52,8 @@ ByeGPT will:
 - skip conversations that were already downloaded
 - open each remaining chat
 - save each conversation as it goes
+
+Clicking the extension toolbar icon now just focuses the in-page overlay. The crawl controls live in the page itself.
 
 ## Where The Files Go
 
@@ -67,8 +67,6 @@ byegpt/
       <conversation-id>/
         <asset files>
 ```
-
-You can also use `Export JSON` in the popup if you want one combined bundle.
 
 ## What The JSON Looks Like
 

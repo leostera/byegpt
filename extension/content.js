@@ -9,11 +9,11 @@
   var CAPTURE_KEY = "byegpt.capture";
   var JOB_KEY = "byegpt.job";
   var SETTINGS_KEY = "byegpt.settings";
-  var POPUP_HEARTBEAT_KEY = "byegpt.popupHeartbeat";
   var OVERLAY_ID = "byegpt-progress-overlay";
   var extensionContextInvalidated = false;
   var resumeRetryTimer = null;
   var overlayRefreshTimer = null;
+  var overlayFocusTimer = null;
   var pendingAssetFetches = {};
 
   ensureSettings();
@@ -107,6 +107,12 @@
       return true;
     }
 
+    if (message.type === "byegpt:focus-overlay") {
+      focusOverlay();
+      sendResponse({ ok: true });
+      return;
+    }
+
     if (message.type === "byegpt:capture-current") {
       captureCurrentConversation()
         .then(function (result) {
@@ -175,6 +181,14 @@
   }
 
   async function startCrawl() {
+    if (resumeRetryTimer) {
+      clearTimeout(resumeRetryTimer);
+      resumeRetryTimer = null;
+    }
+
+    rejectAllPendingAssetFetches("Started a new crawl.");
+    await setInStorage(CAPTURE_KEY, emptyCapture());
+
     var settings = await loadSettings();
     var currentUrl = normalizeConversationUrl(window.location.href) || null;
     var seenUrls = currentUrl ? [currentUrl] : [];
@@ -217,24 +231,8 @@
   }
 
   async function stopCrawl() {
-    var stored = await getFromStorage([JOB_KEY]);
-    var job = stored[JOB_KEY];
-    if (!job) {
-      return { stopped: false, reason: "no-job" };
-    }
-
-    job.active = false;
-    job.stoppedAt = new Date().toISOString();
-    job.updatedAt = job.stoppedAt;
-    delete job.pausedReason;
-    await setInStorage(JOB_KEY, job);
-
-    if (resumeRetryTimer) {
-      clearTimeout(resumeRetryTimer);
-      resumeRetryTimer = null;
-    }
-
-    return { stopped: true };
+    await restartCrawl();
+    return { stopped: true, reset: true };
   }
 
   async function restartCrawl() {
@@ -254,20 +252,6 @@
     var job = stored[JOB_KEY];
     if (!job || !job.active) {
       return;
-    }
-
-    if (await isPopupOpen()) {
-      job.pausedReason = "popup_open";
-      job.updatedAt = new Date().toISOString();
-      await setInStorage(JOB_KEY, job);
-      scheduleResumeRetry();
-      return;
-    }
-
-    if (job.pausedReason === "popup_open") {
-      delete job.pausedReason;
-      job.updatedAt = new Date().toISOString();
-      await setInStorage(JOB_KEY, job);
     }
 
     if (job.phase === "inventory") {
@@ -365,13 +349,6 @@
     for (var round = 0; round < 200; round += 1) {
       var beforeSeenCount = (job.seenUrls || []).length;
       await ingestSidebarEntries(job);
-
-      if (await isPopupOpen()) {
-        job.pausedReason = "popup_open";
-        job.updatedAt = new Date().toISOString();
-        await setInStorage(JOB_KEY, job);
-        return { paused: true };
-      }
 
       var scrollState = await scrollSidebarForMoreChats();
       var lazyLoadResult = await waitForSidebarLazyLoad(
@@ -896,15 +873,6 @@
     if (!stored[SETTINGS_KEY]) {
       await setInStorage(SETTINGS_KEY, mergeSettings(null));
     }
-  }
-
-  async function isPopupOpen() {
-    var stored = await getFromStorage([POPUP_HEARTBEAT_KEY]);
-    var heartbeat = Number(stored[POPUP_HEARTBEAT_KEY] || 0);
-    if (!heartbeat) {
-      return false;
-    }
-    return Date.now() - heartbeat < 2500;
   }
 
   async function loadSettings() {
@@ -1567,15 +1535,7 @@
     if (!overlay) {
       return;
     }
-
-    var hasWork =
-      (status.job && (status.job.active || status.job.completedAt)) ||
-      status.downloadedConversationCount > 0;
-
-    overlay.style.display = hasWork ? "block" : "none";
-    if (!hasWork) {
-      return;
-    }
+    overlay.style.display = "block";
 
     var visited =
       status.job && status.job.visitedUrls ? status.job.visitedUrls.length : 0;
@@ -1617,6 +1577,12 @@
     var lastNode = /** @type {HTMLElement | null} */ (
       overlay.querySelector("[data-role='last']")
     );
+    var actionButton = /** @type {HTMLButtonElement | null} */ (
+      overlay.querySelector("[data-role='action']")
+    );
+    var noteNode = /** @type {HTMLElement | null} */ (
+      overlay.querySelector("[data-role='note']")
+    );
 
     if (statusNode) {
       statusNode.textContent = formatOverlayStatus(status.job);
@@ -1648,6 +1614,19 @@
     if (lastNode) {
       lastNode.textContent = "Last saved: " + shortenLabel(lastSaved);
     }
+    if (actionButton) {
+      var active = Boolean(status.job && status.job.active);
+      actionButton.textContent = active ? "Stop" : "Start Downloading";
+      actionButton.style.background = active
+        ? "linear-gradient(135deg,#ef4444,#fb7185)"
+        : "linear-gradient(135deg,#22c55e,#38bdf8)";
+    }
+    if (noteNode) {
+      noteNode.textContent =
+        status.job && status.job.active
+          ? "Stopping resets local crawl state. Existing files on disk stay."
+          : "Already-saved conversation files are skipped automatically.";
+    }
   }
 
   function ensureOverlay() {
@@ -1676,17 +1655,22 @@
     overlay.style.backdropFilter = "blur(8px)";
     overlay.style.fontFamily =
       "ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-    overlay.style.pointerEvents = "none";
+    overlay.style.pointerEvents = "auto";
+    overlay.style.border = "1px solid rgba(148, 163, 184, 0.18)";
     overlay.innerHTML =
       '<div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">byegpt</div>' +
       '<div data-role="status" style="margin-top:6px;font-size:14px;font-weight:700;color:#ffffff">Idle</div>' +
+      '<button data-role="action" type="button" style="margin-top:12px;width:100%;border:0;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700;color:#ffffff;cursor:pointer;background:linear-gradient(135deg,#22c55e,#38bdf8)">Start Downloading</button>' +
       '<div style="margin-top:10px;height:8px;border-radius:999px;background:rgba(148,163,184,.22);overflow:hidden">' +
       '<div data-role="bar" style="height:100%;width:0%;background:linear-gradient(90deg,#22c55e,#38bdf8)"></div>' +
       "</div>" +
       '<div data-role="summary" style="margin-top:8px;font-size:12px;color:#cbd5e1">0 visited / 0 pending / 0 known</div>' +
       '<div data-role="downloads" style="margin-top:4px;font-size:12px;color:#cbd5e1">0 saved</div>' +
       '<div data-role="current" style="margin-top:8px;font-size:12px;color:#e2e8f0">Current: -</div>' +
-      '<div data-role="last" style="margin-top:4px;font-size:12px;color:#e2e8f0">Last saved: -</div>';
+      '<div data-role="last" style="margin-top:4px;font-size:12px;color:#e2e8f0">Last saved: -</div>' +
+      '<div data-role="note" style="margin-top:10px;font-size:11px;line-height:1.5;color:#94a3b8">Already-saved conversation files are skipped automatically.</div>';
+
+    overlay.addEventListener("click", onOverlayClick);
 
     parent.appendChild(overlay);
     return overlay;
@@ -1694,13 +1678,10 @@
 
   function formatOverlayStatus(job) {
     if (!job) {
-      return "Idle";
+      return "Ready to export";
     }
     if (job.stoppedAt) {
-      return "Download stopped";
-    }
-    if (job.active && job.pausedReason === "popup_open") {
-      return "Paused while popup is open";
+      return "Reset";
     }
     if (job.active && job.phase === "inventory") {
       return "Building conversation inventory";
@@ -1723,6 +1704,63 @@
       return text;
     }
     return text.slice(0, 53) + "...";
+  }
+
+  function onOverlayClick(event) {
+    var button =
+      event.target &&
+      typeof event.target.closest === "function" &&
+      event.target.closest("[data-role='action']");
+    if (!button) {
+      return;
+    }
+
+    handleOverlayAction(button).catch(function (error) {
+      console.warn("byegpt overlay action failed", error);
+    });
+  }
+
+  async function handleOverlayAction(button) {
+    if (!button || button.disabled) {
+      return;
+    }
+
+    button.disabled = true;
+    button.style.opacity = "0.75";
+
+    try {
+      var status = await getStatus();
+      if (status.job && status.job.active) {
+        await stopCrawl();
+      } else {
+        await startCrawl();
+      }
+    } finally {
+      button.disabled = false;
+      button.style.opacity = "1";
+      await refreshOverlay();
+      focusOverlay();
+    }
+  }
+
+  function focusOverlay() {
+    var overlay = ensureOverlay();
+    if (!overlay) {
+      return;
+    }
+
+    overlay.style.borderColor = "rgba(56, 189, 248, 0.85)";
+    overlay.style.boxShadow = "0 20px 60px rgba(14, 165, 233, 0.35)";
+
+    if (overlayFocusTimer) {
+      clearTimeout(overlayFocusTimer);
+    }
+
+    overlayFocusTimer = setTimeout(function () {
+      overlay.style.borderColor = "rgba(148, 163, 184, 0.18)";
+      overlay.style.boxShadow = "0 20px 50px rgba(2, 6, 23, 0.45)";
+      overlayFocusTimer = null;
+    }, 1200);
   }
 
   function requestAssetBytesViaPage(url) {

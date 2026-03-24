@@ -11,6 +11,7 @@ test("manifest exposes store-ready icon metadata", () => {
 
   assert.equal(manifest.name, "ByeGPT");
   assert.equal(manifest.short_name, "ByeGPT");
+  assert.ok(!("default_popup" in manifest.action));
   assert.ok(manifest.icons["16"]);
   assert.ok(manifest.icons["48"]);
   assert.ok(manifest.icons["128"]);

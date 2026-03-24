@@ -25,5 +25,4 @@ This directory contains the Chrome extension that exports visible ChatGPT conver
 
 - Keep `background.js` limited to download and extension-runtime concerns.
 - Keep `injected.js` limited to page-context interception and page-context fetch bridges.
-- Keep `popup.js` limited to popup state and controls.
-- Keep `content.js` as the orchestrator, but prefer extracting helpers instead of growing single-function complexity.
+- Keep `content.js` as the orchestrator and in-page control surface, but prefer extracting helpers instead of growing single-function complexity.

@@ -34,8 +34,7 @@ The extension has a single purpose: export the current user's own visible ChatGP
 
 ## Permission justifications
 
-- `activeTab`: used to start export actions from the currently active ChatGPT tab.
-- `tabs`: used to message the active ChatGPT tab and drive the crawl across conversation URLs.
+- `tabs`: used to focus the in-page overlay from the toolbar icon and coordinate export behavior on the current ChatGPT tab.
 - `storage`: used to keep local crawl state and captured API responses until they are exported.
 - `downloads`: used to write conversation JSON files and asset files to the user's Downloads folder.
 - `unlimitedStorage`: used to avoid truncating locally captured conversation data during long exports.
@@ -71,8 +70,8 @@ The extension processes conversation content locally in the browser and writes i
 1. Install the unpacked extension ZIP.
 2. Sign in to a test ChatGPT account.
 3. Open `https://chatgpt.com/`.
-4. Open the `ByeGPT` popup and click `Start Download`.
-5. Close the popup and watch the in-page progress widget in the bottom-right corner.
+4. Confirm the in-page `ByeGPT` overlay appears in the bottom-right corner.
+5. Click `Start Downloading` in the overlay.
 6. Verify that conversation JSON files appear in the Downloads folder under `byegpt/conversations/`.
 7. Open one exported JSON file and confirm it contains API-derived conversation data and asset references.
 

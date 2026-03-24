@@ -5,13 +5,7 @@
   "version": "0.1.0",
   "description": "Export your own visible ChatGPT chats from a logged-in browser session.",
   "homepage_url": "https://github.com/leostera/byegpt",
-  "permissions": [
-    "activeTab",
-    "downloads",
-    "storage",
-    "tabs",
-    "unlimitedStorage"
-  ],
+  "permissions": ["downloads", "storage", "tabs", "unlimitedStorage"],
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
@@ -30,8 +24,7 @@
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"
-    },
-    "default_popup": "popup.html"
+    }
   },
   "background": {
     "service_worker": "background.js"

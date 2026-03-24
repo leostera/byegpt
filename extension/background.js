@@ -1,5 +1,15 @@
 // Background runtime responsibilities are intentionally narrow:
 // accept download requests from the content script and emit local files.
+chrome.action.onClicked.addListener(function (tab) {
+  if (!tab || typeof tab.id !== "number") {
+    return;
+  }
+
+  chrome.tabs
+    .sendMessage(tab.id, { type: "byegpt:focus-overlay" })
+    .catch(function () {});
+});
+
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
   if (!message || !message.type) {
     return;
