@@ -10,6 +10,7 @@
   var JOB_KEY = "byegpt.job";
   var SETTINGS_KEY = "byegpt.settings";
   var OVERLAY_ID = "byegpt-progress-overlay";
+  var CAPTURE_SESSION_KEY = "byegpt.captureEnabled";
   var extensionContextInvalidated = false;
   var resumeRetryTimer = null;
   var overlayRefreshTimer = null;
@@ -18,7 +19,9 @@
   var pendingAssetFetches = {};
 
   ensureSettings();
+  setPageCaptureEnabled(false);
   injectPageScript();
+  syncCaptureModeFromStorage().catch(function () {});
   window.addEventListener("message", onWindowMessage);
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
   startOverlayRefresh();
@@ -187,6 +190,7 @@
       resumeRetryTimer = null;
     }
 
+    setPageCaptureEnabled(true);
     rejectAllPendingAssetFetches("Started a new crawl.");
     await setInStorage(CAPTURE_KEY, emptyCapture());
 
@@ -224,9 +228,11 @@
     var stored = await getFromStorage([JOB_KEY]);
     var job = stored[JOB_KEY];
     if (!job || !job.active) {
+      setPageCaptureEnabled(false);
       return;
     }
 
+    setPageCaptureEnabled(true);
     runCrawlTick(job.runId).catch(function (error) {
       console.error("byegpt crawl resume failed", error);
     });
@@ -243,6 +249,7 @@
       resumeRetryTimer = null;
     }
 
+    setPageCaptureEnabled(false);
     rejectAllPendingAssetFetches("Restarted crawl.");
     await setInStorage(CAPTURE_KEY, emptyCapture());
     await setInStorage(JOB_KEY, null);
@@ -506,9 +513,16 @@
       return { downloaded: false, reason: "no-conversation-id" };
     }
 
-    await waitForConversationData(currentId, 5000);
-    await maybeDownloadConversation(currentId, "manual");
-    return { downloaded: true, conversationId: currentId };
+    setPageCaptureEnabled(true);
+    try {
+      await waitForConversationData(currentId, 5000);
+      await maybeDownloadConversation(currentId, "manual");
+      return { downloaded: true, conversationId: currentId };
+    } finally {
+      var stored = await getFromStorage([JOB_KEY]);
+      var job = stored[JOB_KEY];
+      setPageCaptureEnabled(Boolean(job && job.active));
+    }
   }
 
   function findScrollableChatContainers() {
@@ -1003,6 +1017,12 @@
     if (!stored[SETTINGS_KEY]) {
       await setInStorage(SETTINGS_KEY, mergeSettings(null));
     }
+  }
+
+  async function syncCaptureModeFromStorage() {
+    var stored = await getFromStorage([JOB_KEY]);
+    var job = stored[JOB_KEY];
+    setPageCaptureEnabled(Boolean(job && job.active));
   }
 
   async function loadSettings() {
@@ -2030,5 +2050,20 @@
         element.querySelector("a[href*='/c/']") &&
         element.scrollHeight > element.clientHeight + 40,
     );
+  }
+
+  function setPageCaptureEnabled(enabled) {
+    var value = enabled ? "true" : "false";
+    try {
+      document.documentElement.dataset.byegptCaptureEnabled = value;
+    } catch (error) {}
+
+    try {
+      if (enabled) {
+        window.sessionStorage.setItem(CAPTURE_SESSION_KEY, "1");
+      } else {
+        window.sessionStorage.removeItem(CAPTURE_SESSION_KEY);
+      }
+    } catch (error) {}
   }
 })();

@@ -2,6 +2,7 @@
 // and session-bound asset requests that the ChatGPT app itself uses.
 (function () {
   /** @typedef {{ method: string, url: string }} ByegptXhrMeta */
+  var CAPTURE_SESSION_KEY = "byegpt.captureEnabled";
 
   var byegptWindow =
     /** @type {Window & typeof globalThis & { __byegptInjected?: boolean }} */ (
@@ -35,6 +36,20 @@
       "*",
       transfer || [],
     );
+  }
+
+  function isCaptureEnabled() {
+    try {
+      if (document.documentElement.dataset.byegptCaptureEnabled === "true") {
+        return true;
+      }
+    } catch (error) {}
+
+    try {
+      return window.sessionStorage.getItem(CAPTURE_SESSION_KEY) === "1";
+    } catch (error) {
+      return false;
+    }
   }
 
   function isRelevantUrl(rawUrl) {
@@ -107,6 +122,9 @@
     window.fetch = async function patchedFetch(input, init) {
       var response = await originalFetch.apply(this, arguments);
       try {
+        if (!isCaptureEnabled()) {
+          return response;
+        }
         var url =
           typeof input === "string"
             ? input
@@ -155,6 +173,9 @@
         /** @type {XMLHttpRequest & { __byegptMeta?: ByegptXhrMeta }} */ (this);
       xhr.addEventListener("load", function () {
         try {
+          if (!isCaptureEnabled()) {
+            return;
+          }
           var meta = xhr.__byegptMeta;
           if (!meta || !meta.url || !isRelevantUrl(meta.url)) {
             return;
