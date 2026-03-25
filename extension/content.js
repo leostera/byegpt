@@ -14,6 +14,7 @@
   var resumeRetryTimer = null;
   var overlayRefreshTimer = null;
   var overlayFocusTimer = null;
+  var cachedSidebarContainer = null;
   var pendingAssetFetches = {};
 
   ensureSettings();
@@ -168,13 +169,13 @@
       url: window.location.href,
       title: document.title,
       conversationCount: Object.keys(capture.conversations || {}).length,
-      networkEventCount: (capture.networkEvents || []).length,
-      discoveredChatCount: (capture.discoveredChats || []).length,
-      downloadedConversationCount: countDownloadedConversations(
-        capture.conversations || {},
+      networkEventCount: Number(capture.stats.capturedApiResponseCount || 0),
+      discoveredChatCount: calculateDiscoveredChatCount(job),
+      downloadedConversationCount: Number(
+        capture.stats.downloadedConversationCount || 0,
       ),
-      latestDownload: findLatestDownload(capture.conversations || {}),
-      knownTotalCount: calculateKnownTotal(job, capture),
+      latestDownload: capture.stats.latestDownload || null,
+      knownTotalCount: calculateKnownTotal(job),
       autoDownloadConversations: Boolean(settings.autoDownloadConversations),
       job: job,
     };
@@ -434,7 +435,6 @@
       return 0;
     }
     var entries = await collectSidebarEntries();
-    await rememberDiscoveredChats(entries);
     if (!(await isRunCurrent(runId))) {
       return 0;
     }
@@ -512,21 +512,36 @@
   }
 
   function findScrollableChatContainers() {
-    var elements = Array.prototype.slice.call(document.querySelectorAll("*"));
-    return elements.filter(function (element) {
-      if (!element || typeof element.querySelector !== "function") {
-        return false;
+    if (isValidSidebarContainer(cachedSidebarContainer)) {
+      return [cachedSidebarContainer];
+    }
+
+    var links = /** @type {NodeListOf<HTMLAnchorElement>} */ (
+      document.querySelectorAll("a[href*='/c/']")
+    );
+    var containers = [];
+
+    for (var i = 0; i < links.length; i += 1) {
+      var parent = links[i].parentElement;
+      while (parent && parent !== document.body) {
+        if (isValidSidebarContainer(parent)) {
+          if (containers.indexOf(parent) === -1) {
+            containers.push(parent);
+          }
+          break;
+        }
+        parent = parent.parentElement;
       }
-      if (!element.querySelector("a[href*='/c/']")) {
-        return false;
-      }
-      return element.scrollHeight > element.clientHeight + 40;
-    });
+    }
+
+    cachedSidebarContainer = containers[0] || null;
+    return containers;
   }
 
   async function collectSidebarEntries() {
+    var root = getSidebarQueryRoot();
     var nodes = /** @type {NodeListOf<HTMLAnchorElement>} */ (
-      document.querySelectorAll("a[href*='/c/']")
+      root.querySelectorAll("a[href*='/c/']")
     );
     var entries = [];
     for (var i = 0; i < nodes.length; i += 1) {
@@ -567,8 +582,9 @@
       return null;
     }
 
+    var root = getSidebarQueryRoot();
     var nodes = /** @type {NodeListOf<HTMLAnchorElement>} */ (
-      document.querySelectorAll("a[href*='/c/']")
+      root.querySelectorAll("a[href*='/c/']")
     );
     for (var i = 0; i < nodes.length; i += 1) {
       var href = normalizeConversationUrl(nodes[i].href);
@@ -578,16 +594,6 @@
     }
 
     return null;
-  }
-
-  async function rememberDiscoveredChats(entries) {
-    var capture = await loadCapture();
-    capture.lastUpdatedAt = new Date().toISOString();
-    capture.discoveredChats = mergeDiscoveredChats(
-      capture.discoveredChats || [],
-      entries,
-    );
-    await setInStorage(CAPTURE_KEY, capture);
   }
 
   async function scrollSidebarForMoreChats() {
@@ -671,8 +677,9 @@
   async function persistNetworkEvent(eventPayload) {
     var capture = await loadCapture();
     capture.lastUpdatedAt = new Date().toISOString();
-    capture.networkEvents = capture.networkEvents || [];
-    capture.networkEvents.push(eventPayload);
+    capture.stats = ensureCaptureStats(capture.stats);
+    capture.stats.capturedApiResponseCount =
+      Number(capture.stats.capturedApiResponseCount || 0) + 1;
 
     var associatedId =
       extractConversationId(eventPayload.url) ||
@@ -696,10 +703,6 @@
         extractAssetReferencesFromEvent(eventPayload, associatedId),
       );
       capture.conversations[key] = conversation;
-    }
-
-    if (capture.networkEvents.length > 5000) {
-      capture.networkEvents = capture.networkEvents.slice(-5000);
     }
 
     await setInStorage(CAPTURE_KEY, capture);
@@ -831,8 +834,15 @@
       createdAt: new Date().toISOString(),
       lastUpdatedAt: new Date().toISOString(),
       conversations: {},
-      discoveredChats: [],
-      networkEvents: [],
+      stats: emptyCaptureStats(),
+    };
+  }
+
+  function emptyCaptureStats() {
+    return {
+      capturedApiResponseCount: 0,
+      downloadedConversationCount: 0,
+      latestDownload: null,
     };
   }
 
@@ -840,13 +850,25 @@
     var changed = false;
     var normalized = Object.assign({}, capture || {});
 
-    if (!Array.isArray(normalized.discoveredChats)) {
-      normalized.discoveredChats = [];
+    if (!normalized.stats || typeof normalized.stats !== "object") {
+      normalized.stats = emptyCaptureStats();
+      changed = true;
+    } else {
+      var normalizedStats = ensureCaptureStats(normalized.stats);
+      if (normalizedStats.__changed) {
+        delete normalizedStats.__changed;
+        changed = true;
+      }
+      normalized.stats = normalizedStats;
+    }
+
+    if ("discoveredChats" in normalized) {
+      delete normalized.discoveredChats;
       changed = true;
     }
 
-    if (!Array.isArray(normalized.networkEvents)) {
-      normalized.networkEvents = [];
+    if ("networkEvents" in normalized) {
+      delete normalized.networkEvents;
       changed = true;
     }
 
@@ -935,6 +957,40 @@
     return normalized;
   }
 
+  function ensureCaptureStats(stats) {
+    var changed = false;
+    var normalized = Object.assign({}, emptyCaptureStats(), stats || {});
+
+    if (typeof normalized.capturedApiResponseCount !== "number") {
+      normalized.capturedApiResponseCount = Number(
+        normalized.capturedApiResponseCount || 0,
+      );
+      changed = true;
+    }
+
+    if (typeof normalized.downloadedConversationCount !== "number") {
+      normalized.downloadedConversationCount = Number(
+        normalized.downloadedConversationCount || 0,
+      );
+      changed = true;
+    }
+
+    if (
+      normalized.latestDownload &&
+      (typeof normalized.latestDownload !== "object" ||
+        !normalized.latestDownload.downloadedAt)
+    ) {
+      normalized.latestDownload = null;
+      changed = true;
+    }
+
+    if (changed) {
+      normalized.__changed = true;
+    }
+
+    return normalized;
+  }
+
   function normalizeStoredApiEvent(eventPayload) {
     if (eventPayload && eventPayload.request && eventPayload.response) {
       return eventPayload;
@@ -989,7 +1045,7 @@
 
     await downloadConversationAssets(conversationId, conversation);
 
-    var bundle = await buildConversationBundle(capture, conversationId);
+    var bundle = buildConversationBundle(conversation);
     var filename = buildConversationJsonPath(conversationId);
 
     var response = await chrome.runtime.sendMessage({
@@ -1006,19 +1062,29 @@
       throw new Error((response && response.error) || "Download failed.");
     }
 
+    var downloadedAt = new Date().toISOString();
     conversation.exportMetadata = {
-      downloadedAt: new Date().toISOString(),
+      downloadedAt: downloadedAt,
       downloadCount: Number(exportMetadata.downloadCount || 0) + 1,
       lastDownloadedFilename: filename,
       lastDownloadedReason: reason,
       lastDownloadedSignature: signature,
     };
-    capture.conversations[conversationId] = conversation;
+
+    capture.stats = ensureCaptureStats(capture.stats);
+    capture.stats.downloadedConversationCount =
+      Number(capture.stats.downloadedConversationCount || 0) + 1;
+    capture.stats.latestDownload = {
+      id: conversationId,
+      label: conversation.title || conversationId,
+      downloadedAt: downloadedAt,
+    };
+    delete capture.conversations[conversationId];
+    capture.lastUpdatedAt = downloadedAt;
     await setInStorage(CAPTURE_KEY, capture);
   }
 
-  async function buildConversationBundle(capture, conversationId) {
-    var conversation = capture.conversations[conversationId];
+  function buildConversationBundle(conversation) {
     return {
       conversation_id: conversation.id,
       title: conversation.title || null,
@@ -1424,47 +1490,20 @@
     return sanitized.replace(/\s+/g, "-").slice(0, 140);
   }
 
-  function countDownloadedConversations(conversations) {
-    return Object.keys(conversations).filter(function (id) {
-      var conversation = conversations[id];
-      return (
-        conversation &&
-        conversation.exportMetadata &&
-        conversation.exportMetadata.downloadedAt
-      );
-    }).length;
+  function calculateDiscoveredChatCount(job) {
+    if (!job) {
+      return 0;
+    }
+    if (job.inventoryCount) {
+      return job.inventoryCount;
+    }
+    if (job.seenUrls) {
+      return job.seenUrls.length;
+    }
+    return 0;
   }
 
-  function findLatestDownload(conversations) {
-    var latest = null;
-
-    Object.keys(conversations).forEach(function (id) {
-      var conversation = conversations[id];
-      if (
-        !conversation ||
-        !conversation.exportMetadata ||
-        !conversation.exportMetadata.downloadedAt
-      ) {
-        return;
-      }
-
-      if (
-        !latest ||
-        conversation.exportMetadata.downloadedAt > latest.downloadedAt
-      ) {
-        latest = {
-          id: id,
-          label: conversation.title || id,
-          downloadedAt: conversation.exportMetadata.downloadedAt,
-        };
-      }
-    });
-
-    return latest;
-  }
-
-  function calculateKnownTotal(job, capture) {
-    var discovered = (capture.discoveredChats || []).length;
+  function calculateKnownTotal(job) {
     var seen = job && job.seenUrls ? job.seenUrls.length : 0;
     var pending = job && job.pendingUrls ? job.pendingUrls.length : 0;
     var visited = job && job.visitedUrls ? job.visitedUrls.length : 0;
@@ -1475,7 +1514,7 @@
           ? job.skippedCount
           : 0;
     var inventory = job && job.inventoryCount ? job.inventoryCount : 0;
-    return Math.max(discovered, seen, inventory, pending + visited + skipped);
+    return Math.max(seen, inventory, pending + visited + skipped);
   }
 
   function dedupe(values) {
@@ -1964,5 +2003,19 @@
     }
 
     return candidates;
+  }
+
+  function getSidebarQueryRoot() {
+    return findScrollableChatContainers()[0] || document;
+  }
+
+  function isValidSidebarContainer(element) {
+    return Boolean(
+      element &&
+        element.isConnected &&
+        typeof element.querySelector === "function" &&
+        element.querySelector("a[href*='/c/']") &&
+        element.scrollHeight > element.clientHeight + 40,
+    );
   }
 })();
