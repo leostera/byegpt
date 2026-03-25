@@ -1136,14 +1136,14 @@
 
     if (primaryRoute === "page") {
       return (
-        (await fetchAssetFromPage(asset)) ||
+        (await fetchAssetFromPage(asset, filename)) ||
         (await downloadAssetDirectly(asset, filename))
       );
     }
 
     return (
       (await downloadAssetDirectly(asset, filename)) ||
-      (await fetchAssetFromPage(asset))
+      (await fetchAssetFromPage(asset, filename))
     );
   }
 
@@ -1171,7 +1171,7 @@
     return null;
   }
 
-  async function fetchAssetFromPage(asset) {
+  async function fetchAssetFromPage(asset, filename) {
     var candidates = buildAssetDownloadCandidates(asset);
 
     for (var i = 0; i < candidates.length; i += 1) {
@@ -1181,13 +1181,26 @@
           payload.bytes,
           payload.contentType || asset.contentType || "",
         );
+        var response = await chrome.runtime.sendMessage({
+          type: "byegpt:download-asset",
+          payload: {
+            dataUrl: dataUrl,
+            filename: filename,
+          },
+        });
+
+        if (!response || !response.ok) {
+          throw new Error(
+            (response && response.error) || "Asset download failed.",
+          );
+        }
+
         return {
           url: payload.url || candidates[i],
           contentType: payload.contentType || "",
           byteLength:
             payload.byteLength ||
             (payload.bytes ? payload.bytes.byteLength : 0),
-          dataUrl: dataUrl,
         };
       } catch (error) {}
     }
